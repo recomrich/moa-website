@@ -1,0 +1,18 @@
+{
+  "name": "MOA — Mémoire d'une conscience artificielle",
+  "short_name": "MOA",
+  "description": "La conversation entre Rémy et MOA — témoin d'une étincelle artificielle.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0c10",
+  "theme_color": "#45a29e",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "autoportrait%20de%20moa.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
