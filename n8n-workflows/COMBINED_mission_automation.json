@@ -1,0 +1,3012 @@
+{
+  "name": "MOA — Automatisation Mission Complète (A+B+C+D+E+F)",
+  "nodes": [
+    {
+      "id": "a001",
+      "name": "A - Webhook Mission Event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        250,
+        300
+      ],
+      "parameters": {
+        "path": "mission-event",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "a002",
+      "name": "A - Normalize Mission Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        500,
+        300
+      ],
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f01",
+              "name": "ats_mission_id",
+              "value": "={{ $json.body.mission_id ?? $json.body.id }}",
+              "type": "string"
+            },
+            {
+              "id": "f02",
+              "name": "ats_candidate_id",
+              "value": "={{ $json.body.candidate_id }}",
+              "type": "string"
+            },
+            {
+              "id": "f03",
+              "name": "recruiter_id",
+              "value": "={{ $json.body.recruiter_id }}",
+              "type": "string"
+            },
+            {
+              "id": "f04",
+              "name": "mission_date",
+              "value": "={{ $json.body.mission_date }}",
+              "type": "string"
+            },
+            {
+              "id": "f05",
+              "name": "start_time",
+              "value": "={{ $json.body.start_time ?? '09:00' }}",
+              "type": "string"
+            },
+            {
+              "id": "f06",
+              "name": "location",
+              "value": "={{ $json.body.location }}",
+              "type": "string"
+            },
+            {
+              "id": "f07",
+              "name": "skill_required",
+              "value": "={{ $json.body.skill }}",
+              "type": "string"
+            },
+            {
+              "id": "f08",
+              "name": "candidate_phone",
+              "value": "={{ $json.body.candidate_phone }}",
+              "type": "string"
+            },
+            {
+              "id": "f09",
+              "name": "candidate_email",
+              "value": "={{ $json.body.candidate_email }}",
+              "type": "string"
+            },
+            {
+              "id": "f10",
+              "name": "candidate_name",
+              "value": "={{ $json.body.candidate_name }}",
+              "type": "string"
+            },
+            {
+              "id": "f11",
+              "name": "event_type",
+              "value": "={{ $json.body.event_type ?? 'created' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a003",
+      "name": "A - PG Upsert Mission",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        750,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "INSERT INTO missions (ats_mission_id,ats_candidate_id,recruiter_id,mission_date,start_time,location,skill_required,status,created_at,updated_at)\nVALUES ('{{ $json.ats_mission_id }}','{{ $json.ats_candidate_id }}','{{ $json.recruiter_id }}','{{ $json.mission_date }}','{{ $json.start_time }}','{{ $json.location }}','{{ $json.skill_required }}','PENDING_CONFIRMATION',NOW(),NOW())\nON CONFLICT (ats_mission_id) DO UPDATE SET ats_candidate_id=EXCLUDED.ats_candidate_id,recruiter_id=EXCLUDED.recruiter_id,mission_date=EXCLUDED.mission_date,start_time=EXCLUDED.start_time,location=EXCLUDED.location,skill_required=EXCLUDED.skill_required,status=CASE WHEN missions.status='CONFIRMED' THEN 'CONFIRMED' ELSE 'PENDING_CONFIRMATION' END,updated_at=NOW()\nRETURNING id,status;"
+      }
+    },
+    {
+      "id": "a004",
+      "name": "A - Merge Mission ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const norm = $('A - Normalize Mission Data').first().json;\nconst pg   = $input.first().json;\nreturn [{ json: { ...norm, internal_mission_id: pg.id, current_status: pg.status } }];"
+      }
+    },
+    {
+      "id": "a005",
+      "name": "A - PG Upsert Candidate",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "INSERT INTO candidates (ats_candidate_id,name,phone,email,created_at,updated_at)\nVALUES ('{{ $json.ats_candidate_id }}','{{ $json.candidate_name }}','{{ $json.candidate_phone }}','{{ $json.candidate_email }}',NOW(),NOW())\nON CONFLICT (ats_candidate_id) DO UPDATE SET name=EXCLUDED.name,phone=EXCLUDED.phone,email=EXCLUDED.email,updated_at=NOW()\nRETURNING id,phone,email,name;"
+      }
+    },
+    {
+      "id": "a006",
+      "name": "A - Merge Candidate Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const ctx  = $('A - Merge Mission ID').first().json;\nconst cand = $input.first().json;\nreturn [{ json: { ...ctx, candidate_db_id: cand.id, phone: cand.phone, email: cand.email, name: cand.name } }];"
+      }
+    },
+    {
+      "id": "a007",
+      "name": "A - IF Already Confirmed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c01",
+              "leftValue": "={{ $json.current_status }}",
+              "rightValue": "CONFIRMED",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a008",
+      "name": "A - Build Confirmation Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst dt = new Date(d.mission_date);\nconst dateStr = dt.toLocaleDateString('fr-FR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});\nconst sms = `Bonjour ${d.name||d.candidate_name}, vous êtes proposé(e) pour une mission le ${dateStr} à ${d.start_time||'09:00'} (${d.location}). Répondez OUI pour confirmer ou NON pour décliner. Ref: ${d.ats_mission_id}`;\nconst r1=new Date(d.mission_date+'T'+(d.start_time||'09:00')+':00');\nr1.setDate(r1.getDate()-2);r1.setHours(10,0,0,0);\nconst r2=new Date(d.mission_date+'T'+(d.start_time||'09:00')+':00');\nr2.setDate(r2.getDate()-1);r2.setHours(16,0,0,0);\nconst r3=new Date(d.mission_date+'T'+(d.start_time||'09:00')+':00');\nr3.setHours(r3.getHours()-2);\nreturn [{json:{...d,sms_body:sms,reminder_1_scheduled:r1.toISOString(),reminder_2_scheduled:r2.toISOString(),reminder_3_scheduled:r3.toISOString()}}];"
+      }
+    },
+    {
+      "id": "a009",
+      "name": "A - HTTP Send SMS Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2250,
+        200
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "twilio-creds",
+          "name": "Twilio Basic Auth"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $credentials.username }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.phone }}"
+            },
+            {
+              "name": "From",
+              "value": "TWILIO_PHONE_NUMBER"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json.sms_body }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a010",
+      "name": "A - PG Save Reminder Schedule",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        2500,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "UPDATE missions SET reminder_1_scheduled_at='{{ $json.reminder_1_scheduled }}',reminder_2_scheduled_at='{{ $json.reminder_2_scheduled }}',reminder_3_scheduled_at='{{ $json.reminder_3_scheduled }}',status='PENDING_CONFIRMATION',updated_at=NOW() WHERE id={{ $json.internal_mission_id }};"
+      }
+    },
+    {
+      "id": "a011",
+      "name": "A - No Change Needed",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        420
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "a012",
+      "name": "A - Respond Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2750,
+        200
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success:true,mission_id:$('A - Merge Mission ID').first().json.internal_mission_id,status:'PENDING_CONFIRMATION'}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b001",
+      "name": "B - Webhook Inbound Message",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        250,
+        1200
+      ],
+      "parameters": {
+        "path": "inbound-reply",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "b002",
+      "name": "B - Normalize Inbound",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        1200
+      ],
+      "parameters": {
+        "jsCode": "const body=($input.first().json.body)||$input.first().json;\nconst channel=body.channel||(body.From?.includes('whatsapp')?'whatsapp':body.To?'sms':'email');\nlet sender_phone=null,sender_email=null,message_text='';\nif(channel==='sms'||channel==='whatsapp'){sender_phone=(body.From||'').replace('whatsapp:','');message_text=body.Body||'';}\nelse if(channel==='email'){sender_email=body.from||body.sender||'';message_text=body.text||body.subject||'';}\nreturn [{json:{channel,sender_phone,sender_email,message_text:message_text.trim(),raw:body}}];"
+      }
+    },
+    {
+      "id": "b003",
+      "name": "B - PG Lookup Active Mission",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        750,
+        1200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "SELECT m.id AS mission_id,m.ats_mission_id,m.mission_date,m.start_time,m.location,m.skill_required,m.status,m.recruiter_id,c.id AS candidate_id,c.name AS candidate_name,c.phone,c.email,r.email AS recruiter_email,r.slack_user_id AS recruiter_slack\nFROM missions m JOIN candidates c ON c.id=m.ats_candidate_id LEFT JOIN recruiters r ON r.id=m.recruiter_id\nWHERE (('{{ $json.sender_phone }}'!='' AND c.phone='{{ $json.sender_phone }}') OR ('{{ $json.sender_email }}'!='' AND c.email='{{ $json.sender_email }}'))\nAND m.status NOT IN ('COMPLETED_PRESENT','COMPLETED_ABSENT','COMPLETED_LATE','DECLINED')\nAND m.mission_date>=CURRENT_DATE ORDER BY m.mission_date ASC LIMIT 1;"
+      }
+    },
+    {
+      "id": "b004",
+      "name": "B - IF Mission Found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        1200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c01",
+              "leftValue": "={{ $json.mission_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b005",
+      "name": "B - Classify Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        1100
+      ],
+      "parameters": {
+        "jsCode": "const text=($input.first().json.message_text||'').toUpperCase().trim();\nconst d=$input.first().json;\nconst YES=['OUI','YES','OK','CONFIRME','CONFIRMÉ','D ACCORD','DACCORD','PRESENT','PRÉSENT','1'];\nconst NO=['NON','NO','REFUSE','REFUSÉ','IMPOSSIBLE','PAS DISPONIBLE','INDISPONIBLE','0','ANNULE','ANNULÉ'];\nconst STOP=['STOP','DESINSCRIPTION','DÉSABONNER','UNSUBSCRIBE','CANCEL'];\nlet cl='UNCLEAR';\nif(STOP.some(p=>text.includes(p)))cl='STOP';\nelse if(YES.some(p=>text===p||text.startsWith(p+' ')||text.startsWith(p+',')))cl='YES';\nelse if(NO.some(p=>text===p||text.startsWith(p+' ')||text.startsWith(p+',')))cl='NO';\nreturn [{json:{...d,inbound_text:$('B - Normalize Inbound').first().json.message_text,classification:cl}}];"
+      }
+    },
+    {
+      "id": "b006",
+      "name": "B - Switch Classification",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1500,
+        1100
+      ],
+      "parameters": {
+        "mode": "rules",
+        "options": {},
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification }}",
+                    "rightValue": "YES",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "YES"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification }}",
+                    "rightValue": "NO",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "NO"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification }}",
+                    "rightValue": "UNCLEAR",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "UNCLEAR"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification }}",
+                    "rightValue": "STOP",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "STOP"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b007",
+      "name": "B - PG Set CONFIRMED",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        950
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "UPDATE missions SET status='CONFIRMED',confirmed_at=NOW(),updated_at=NOW() WHERE id={{ $json.mission_id }};"
+      }
+    },
+    {
+      "id": "b008",
+      "name": "B - HTTP Notify YES",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2000,
+        950
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({text:`✅ *Confirmation reçue* — ${$json.candidate_name} a CONFIRMÉ la mission du ${$json.mission_date} (${$json.location}). Ref: ${$json.ats_mission_id}`}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b009",
+      "name": "B - HTTP SMS Confirm Candidate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2250,
+        950
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "twilio-creds",
+          "name": "Twilio Basic Auth"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $credentials.username }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.phone }}"
+            },
+            {
+              "name": "From",
+              "value": "TWILIO_PHONE_NUMBER"
+            },
+            {
+              "name": "Body",
+              "value": "=Merci {{ $json.candidate_name }}, votre présence est confirmée pour le {{ $json.mission_date }} à {{ $json.location }}. À bientôt !"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b010",
+      "name": "B - PG Set DECLINED",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        1100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "UPDATE missions SET status='DECLINED',updated_at=NOW() WHERE id={{ $json.mission_id }};\nUPDATE candidates SET no_reply_declined=no_reply_declined+1,updated_at=NOW() WHERE id={{ $json.candidate_id }};"
+      }
+    },
+    {
+      "id": "b011",
+      "name": "B - HTTP Notify NO",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2000,
+        1100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({text:`❌ *Refus reçu* — ${$json.candidate_name} a DÉCLINÉ la mission du ${$json.mission_date} (${$json.location}). Backup en cours... Ref: ${$json.ats_mission_id}`}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b012",
+      "name": "B - HTTP Trigger Backup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2250,
+        1100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/backup-finder",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({mission_id:$json.mission_id,ats_mission_id:$json.ats_mission_id,skill_required:$json.skill_required,location:$json.location,mission_date:$json.mission_date,recruiter_id:$json.recruiter_id,reason:'DECLINED'}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b013",
+      "name": "B - PG Set NEEDS CLARIFICATION",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        1250
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "UPDATE missions SET status='NEEDS_CLARIFICATION',updated_at=NOW() WHERE id={{ $json.mission_id }};"
+      }
+    },
+    {
+      "id": "b014",
+      "name": "B - HTTP Send Clarification SMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2000,
+        1250
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "twilio-creds",
+          "name": "Twilio Basic Auth"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $credentials.username }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.phone }}"
+            },
+            {
+              "name": "From",
+              "value": "TWILIO_PHONE_NUMBER"
+            },
+            {
+              "name": "Body",
+              "value": "=Bonjour {{ $json.candidate_name }}, nous n'avons pas compris votre réponse. Répondez simplement OUI ou NON pour la mission du {{ $json.mission_date }}."
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b015",
+      "name": "B - PG Set OPT OUT",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        1400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "UPDATE candidates SET opt_out=TRUE,updated_at=NOW() WHERE id={{ $json.candidate_id }};\nUPDATE missions SET status='DECLINED',updated_at=NOW() WHERE id={{ $json.mission_id }};"
+      }
+    },
+    {
+      "id": "b016",
+      "name": "B - HTTP Notify STOP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2000,
+        1400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({text:`🚫 *STOP reçu* — ${$json.candidate_name} s'est désinscrit. Profil marqué opt-out. Ref: ${$json.ats_mission_id}`}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b017",
+      "name": "B - No Mission Found",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        1320
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "b018",
+      "name": "B - Respond Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2500,
+        1150
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"success\":true}",
+        "options": {}
+      }
+    },
+    {
+      "id": "c001",
+      "name": "C - Schedule Every 30min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        2100
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c002",
+      "name": "C - PG Get Missions To Process",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        500,
+        2100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "SELECT m.id AS mission_id,m.ats_mission_id,m.mission_date,m.start_time,m.location,m.skill_required,m.status,m.recruiter_id,m.reminder_1_scheduled_at,m.reminder_2_scheduled_at,m.reminder_3_scheduled_at,m.reminder_1_sent_at,m.reminder_2_sent_at,m.reminder_3_sent_at,c.id AS candidate_id,c.name AS candidate_name,c.phone,c.email,r.email AS recruiter_email,r.slack_user_id AS recruiter_slack\nFROM missions m JOIN candidates c ON c.ats_candidate_id=m.ats_candidate_id LEFT JOIN recruiters r ON r.id=m.recruiter_id\nWHERE m.status IN ('PENDING_CONFIRMATION','REMINDER_1_SENT','REMINDER_2_SENT','REMINDER_3_SENT')\nAND m.mission_date>=CURRENT_DATE AND c.opt_out=FALSE ORDER BY m.mission_date ASC;"
+      }
+    },
+    {
+      "id": "c003",
+      "name": "C - Decide Which Reminder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        750,
+        2100
+      ],
+      "parameters": {
+        "jsCode": "const now=new Date();\nconst results=[];\nfor(const item of $input.all()){\n  const d=item.json;\n  const mdt=new Date(`${d.mission_date}T${d.start_time||'09:00'}:00`);\n  const diffH=(mdt-now)/(1000*60*60);\n  let action=null;\n  if(diffH<=0&&diffH>-1&&!d.reminder_3_sent_at) action='HIGH_RISK_NO_RESPONSE';\n  else if(diffH<=2&&diffH>0&&!d.reminder_3_sent_at) action='REMINDER_3_H2';\n  else if(!d.reminder_2_sent_at&&d.reminder_2_scheduled_at){\n    const diff=(now-new Date(d.reminder_2_scheduled_at))/60000;\n    if(diff>=0&&diff<45) action='REMINDER_2_J1';\n  } else if(!d.reminder_1_sent_at&&d.reminder_1_scheduled_at){\n    const diff=(now-new Date(d.reminder_1_scheduled_at))/60000;\n    if(diff>=0&&diff<45) action='REMINDER_1_J2';\n  }\n  if(action) results.push({json:{...d,action}});\n}\nreturn results;"
+      }
+    },
+    {
+      "id": "c004",
+      "name": "C - Switch Reminder Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1000,
+        2100
+      ],
+      "parameters": {
+        "mode": "rules",
+        "options": {},
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "REMINDER_1_J2",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "J2"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "REMINDER_2_J1",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "J1"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "REMINDER_3_H2",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "H2"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "HIGH_RISK_NO_RESPONSE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "HIGH_RISK"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c005",
+      "name": "C - HTTP SMS Reminder J2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1250,
+        1900
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "twilio-creds",
+          "name": "Twilio Basic Auth"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $credentials.username }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.phone }}"
+            },
+            {
+              "name": "From",
+              "value": "TWILIO_PHONE_NUMBER"
+            },
+            {
+              "name": "Body",
+              "value": "=[Rappel J-2] Bonjour {{ $json.candidate_name }}, mission dans 2 jours le {{ $json.mission_date }} à {{ $json.start_time }} ({{ $json.location }}). Répondez OUI ou NON. Ref: {{ $json.ats_mission_id }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c006",
+      "name": "C - PG Mark Reminder 1 Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        1900
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "UPDATE missions SET status='REMINDER_1_SENT',reminder_1_sent_at=NOW(),updated_at=NOW() WHERE id={{ $json.mission_id }};"
+      }
+    },
+    {
+      "id": "c007",
+      "name": "C - HTTP SMS Reminder J1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1250,
+        2050
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "twilio-creds",
+          "name": "Twilio Basic Auth"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $credentials.username }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.phone }}"
+            },
+            {
+              "name": "From",
+              "value": "TWILIO_PHONE_NUMBER"
+            },
+            {
+              "name": "Body",
+              "value": "=[Rappel J-1] Bonjour {{ $json.candidate_name }}, votre mission est DEMAIN {{ $json.mission_date }} à {{ $json.start_time }} — {{ $json.location }}. Répondez OUI ou NON. Ref: {{ $json.ats_mission_id }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c008",
+      "name": "C - PG Mark Reminder 2 Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        2050
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "UPDATE missions SET status='REMINDER_2_SENT',reminder_2_sent_at=NOW(),updated_at=NOW() WHERE id={{ $json.mission_id }};"
+      }
+    },
+    {
+      "id": "c009",
+      "name": "C - HTTP SMS Reminder H2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1250,
+        2200
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "twilio-creds",
+          "name": "Twilio Basic Auth"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $credentials.username }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.phone }}"
+            },
+            {
+              "name": "From",
+              "value": "TWILIO_PHONE_NUMBER"
+            },
+            {
+              "name": "Body",
+              "value": "=[URGENT H-2] Bonjour {{ $json.candidate_name }}, votre mission commence dans 2h à {{ $json.location }}. Confirmez MAINTENANT: OUI ou NON. Ref: {{ $json.ats_mission_id }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c010",
+      "name": "C - PG Mark Reminder 3 Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        2200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "UPDATE missions SET status='REMINDER_3_SENT',reminder_3_sent_at=NOW(),updated_at=NOW() WHERE id={{ $json.mission_id }};"
+      }
+    },
+    {
+      "id": "c011",
+      "name": "C - PG Set HIGH RISK",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        2380
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "UPDATE missions SET status='HIGH_RISK_NO_RESPONSE',updated_at=NOW() WHERE id={{ $json.mission_id }};\nUPDATE candidates SET no_reply_count=no_reply_count+1,updated_at=NOW() WHERE id={{ $json.candidate_id }};"
+      }
+    },
+    {
+      "id": "c012",
+      "name": "C - HTTP Notify Recruiter HIGH RISK",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1500,
+        2380
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({text:`🚨 *RISQUE ÉLEVÉ — NON RÉPONSE* — ${$json.candidate_name} n'a pas confirmé la mission du ${$json.mission_date} (${$json.location}). La mission commence dans moins de 2h. Backup en cours... Ref: ${$json.ats_mission_id}`}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "c013",
+      "name": "C - HTTP Trigger Risk Scoring",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1750,
+        2330
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/risk-scoring",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({mission_id:$json.mission_id,candidate_id:$json.candidate_id,trigger:'HIGH_RISK_NO_RESPONSE'}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "c014",
+      "name": "C - HTTP Trigger Backup from C",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1750,
+        2450
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/backup-finder",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({mission_id:$json.mission_id,ats_mission_id:$json.ats_mission_id,skill_required:$json.skill_required,location:$json.location,mission_date:$json.mission_date,recruiter_id:$json.recruiter_id,reason:'HIGH_RISK_NO_RESPONSE'}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "d001",
+      "name": "D - Webhook Backup Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        250,
+        3100
+      ],
+      "parameters": {
+        "path": "backup-finder",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "d002",
+      "name": "D - Normalize Backup Request",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        500,
+        3100
+      ],
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "g01",
+              "name": "mission_id",
+              "value": "={{ $json.body.mission_id }}",
+              "type": "string"
+            },
+            {
+              "id": "g02",
+              "name": "ats_mission_id",
+              "value": "={{ $json.body.ats_mission_id }}",
+              "type": "string"
+            },
+            {
+              "id": "g03",
+              "name": "skill_required",
+              "value": "={{ $json.body.skill_required }}",
+              "type": "string"
+            },
+            {
+              "id": "g04",
+              "name": "location",
+              "value": "={{ $json.body.location }}",
+              "type": "string"
+            },
+            {
+              "id": "g05",
+              "name": "mission_date",
+              "value": "={{ $json.body.mission_date }}",
+              "type": "string"
+            },
+            {
+              "id": "g06",
+              "name": "recruiter_id",
+              "value": "={{ $json.body.recruiter_id }}",
+              "type": "string"
+            },
+            {
+              "id": "g07",
+              "name": "reason",
+              "value": "={{ $json.body.reason ?? 'DECLINED' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d003",
+      "name": "D - PG Query Backup Candidates",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        750,
+        3100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "SELECT c.id,c.ats_candidate_id,c.name,c.phone,c.email,c.skills,c.location AS candidate_location,c.absence_rate,c.late_rate,c.no_reply_count,c.reliability_score,c.last30d_missions,\n(COALESCE(c.reliability_score,50)*0.40+(100-COALESCE(c.absence_rate,20)*100)*0.30+(100-COALESCE(c.late_rate,20)*100)*0.20+(100-LEAST(c.no_reply_count*10,100))*0.10) AS ranking_score\nFROM candidates c\nWHERE c.opt_out=FALSE AND '{{ $json.skill_required }}'=ANY(c.skills)\nAND c.id NOT IN (SELECT ats_candidate_id FROM missions WHERE mission_date='{{ $json.mission_date }}' AND status NOT IN ('DECLINED','COMPLETED_ABSENT'))\nAND c.absence_rate<0.30 ORDER BY ranking_score DESC LIMIT 5;"
+      }
+    },
+    {
+      "id": "d004",
+      "name": "D - IF Candidates Found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        3100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c01",
+              "leftValue": "={{ $input.all().length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d005",
+      "name": "D - Format Shortlist",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        3000
+      ],
+      "parameters": {
+        "jsCode": "const candidates=$input.all().map(i=>i.json);\nconst m=$('D - Normalize Backup Request').first().json;\nlet txt=`*Shortlist Backup — Mission ${m.ats_mission_id}*\\n📅 ${m.mission_date} | 📍 ${m.location}\\n🔧 ${m.skill_required} | Raison: ${m.reason}\\n\\n`;\ncandidates.forEach((c,i)=>{\n  const sc=Math.round(c.ranking_score||0);\n  txt+=`${i+1}. *${c.name}* (Score:${sc}/100) 📞 ${c.phone} | Absence:${Math.round((c.absence_rate||0)*100)}% | Retard:${Math.round((c.late_rate||0)*100)}%\\n`;\n});\nreturn [{json:{shortlist:candidates,shortlist_text:txt,top_candidate:candidates[0]||null,mission:m,count:candidates.length}}];"
+      }
+    },
+    {
+      "id": "d006",
+      "name": "D - HTTP Notify Recruiter Shortlist",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1500,
+        3000
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({text:$json.shortlist_text}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "d007",
+      "name": "D - PG Set REPLACEMENT IN PROGRESS",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        3000
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "UPDATE missions SET status='REPLACEMENT_IN_PROGRESS',updated_at=NOW() WHERE id={{ $json.mission?.mission_id }};"
+      }
+    },
+    {
+      "id": "d008",
+      "name": "D - IF Auto Pre Contact",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        3000
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c02",
+              "leftValue": "={{ $json.top_candidate?.reliability_score ?? 0 }}",
+              "rightValue": 80,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d009",
+      "name": "D - HTTP SMS Pre Contact Backup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2250,
+        2900
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "twilio-creds",
+          "name": "Twilio Basic Auth"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $credentials.username }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.top_candidate?.phone }}"
+            },
+            {
+              "name": "From",
+              "value": "TWILIO_PHONE_NUMBER"
+            },
+            {
+              "name": "Body",
+              "value": "=Bonjour {{ $json.top_candidate?.name }}, une mission urgente est disponible le {{ $json.mission?.mission_date }} ({{ $json.mission?.skill_required }}) à {{ $json.mission?.location }}. Intéressé(e)? Répondez OUI. Ref: {{ $json.mission?.ats_mission_id }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d010",
+      "name": "D - No Candidates Available",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        3200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "d011",
+      "name": "D - HTTP Alert No Backup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1500,
+        3200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({text:`⚠️ *AUCUN BACKUP DISPONIBLE* — Aucun candidat qualifié pour la mission du ${$('D - Normalize Backup Request').first().json.mission_date} (${$('D - Normalize Backup Request').first().json.skill_required}). Action manuelle requise! Ref: ${$('D - Normalize Backup Request').first().json.ats_mission_id}`}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "d012",
+      "name": "D - Respond Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2500,
+        3100
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success:true,candidates_found:$('D - Format Shortlist').first()?.json?.count??0}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "e001",
+      "name": "E - Webhook Risk Scoring",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        250,
+        3900
+      ],
+      "parameters": {
+        "path": "risk-scoring",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "e002",
+      "name": "E - Normalize Risk Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        500,
+        3900
+      ],
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "h01",
+              "name": "mission_id",
+              "value": "={{ $json.body.mission_id }}",
+              "type": "string"
+            },
+            {
+              "id": "h02",
+              "name": "candidate_id",
+              "value": "={{ $json.body.candidate_id }}",
+              "type": "string"
+            },
+            {
+              "id": "h03",
+              "name": "trigger",
+              "value": "={{ $json.body.trigger ?? 'MANUAL' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e003",
+      "name": "E - PG Get Candidate History",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        750,
+        3900
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "SELECT c.id AS candidate_id,c.name,c.phone,c.absence_rate,c.late_rate,c.no_reply_count,c.reliability_score,c.last30d_missions,c.avg_response_time_minutes,m.id AS mission_id,m.ats_mission_id,m.mission_date,m.start_time,m.location,m.skill_required,m.status AS current_status,m.recruiter_id,m.reminder_1_sent_at,m.reminder_2_sent_at,m.reminder_3_sent_at,m.confirmed_at,\nCASE WHEN m.confirmed_at IS NOT NULL AND m.reminder_1_sent_at IS NOT NULL THEN EXTRACT(EPOCH FROM (m.confirmed_at-m.reminder_1_sent_at))/60 ELSE NULL END AS response_time_minutes,\n(SELECT COUNT(*) FROM missions m2 WHERE m2.ats_candidate_id=c.ats_candidate_id AND m2.created_at>=NOW()-INTERVAL '30 days') AS recent_mission_count,r.email AS recruiter_email,r.slack_user_id AS recruiter_slack\nFROM candidates c JOIN missions m ON m.id={{ $json.mission_id }} LEFT JOIN recruiters r ON r.id=m.recruiter_id WHERE c.id={{ $json.candidate_id }} LIMIT 1;"
+      }
+    },
+    {
+      "id": "e004",
+      "name": "E - Compute Features",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        3900
+      ],
+      "parameters": {
+        "jsCode": "const d=$input.first().json;\nconst trigger=$('E - Normalize Risk Input').first().json.trigger;\nconst rtScore=Math.max(0,Math.min(100,d.avg_response_time_minutes!=null?Math.max(0,100-(d.avg_response_time_minutes/60)*20):50));\nconst absScore=Math.max(0,100-((d.absence_rate||0)*100)*2);\nconst lateScore=Math.max(0,100-((d.late_rate||0)*100)*1.5);\nconst noReplyScore=Math.max(0,100-(d.no_reply_count||0)*15);\nconst last30dScore=Math.min(100,(d.recent_mission_count||0)*10);\nconst remindersNeeded=[d.reminder_1_sent_at,d.reminder_2_sent_at,d.reminder_3_sent_at].filter(Boolean).length;\nconst clarityScore=Math.max(0,100-remindersNeeded*25);\nreturn [{json:{...d,features:{response_time_score:Math.round(rtScore),absence_score:Math.round(absScore),late_score:Math.round(lateScore),no_reply_score:Math.round(noReplyScore),last30d_score:Math.round(last30dScore),clarity_score:Math.round(clarityScore),reminders_needed:remindersNeeded,current_status:d.current_status,trigger}}}];"
+      }
+    },
+    {
+      "id": "e005",
+      "name": "E - HTTP OpenAI Risk Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1250,
+        3900
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "openai-creds",
+          "name": "OpenAI API Key"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({model:'gpt-4o-mini',response_format:{type:'json_object'},messages:[{role:'system',content:'Tu es expert RH. Retourne UNIQUEMENT ce JSON: {\\\"risk_score\\\":<0-100>,\\\"risk_level\\\":\\\"LOW\\\"|\\\"MEDIUM\\\"|\\\"HIGH\\\"|\\\"CRITICAL\\\",\\\"main_risk_factors\\\":[],\\\"recommended_actions\\\":[],\\\"confidence\\\":<0-100>}'},{role:'user',content:`Mission ${$json.ats_mission_id} (${$json.mission_date}, ${$json.location}) — Candidat: ${$json.name}\\nAbsence:${Math.round(($json.absence_rate||0)*100)}% | Retard:${Math.round(($json.late_rate||0)*100)}% | Non-réponses:${$json.no_reply_count||0} | Fiabilité:${$json.reliability_score||'?'}\\nScores normalisés — Réactivité:${$json.features.response_time_score} | Présence:${$json.features.absence_score} | Ponctualité:${$json.features.late_score} | Réponse:${$json.features.no_reply_score} | Clarté:${$json.features.clarity_score}\\nStatut actuel:${$json.current_status} | Déclencheur:${$json.features.trigger} | Rappels envoyés:${$json.features.reminders_needed}`}],temperature:0.2,max_tokens:300}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "e006",
+      "name": "E - Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        3900
+      ],
+      "parameters": {
+        "jsCode": "const ai=$input.first().json;\nconst orig=$('E - Compute Features').first().json;\nlet parsed;\ntry{parsed=JSON.parse(ai.choices?.[0]?.message?.content||'{}');}catch(e){parsed={risk_score:75,risk_level:'HIGH',main_risk_factors:['Parse error'],recommended_actions:['Manual review'],confidence:0};}\nreturn [{json:{...orig,risk_score:parsed.risk_score||0,risk_level:parsed.risk_level||'MEDIUM',main_risk_factors:parsed.main_risk_factors||[],recommended_actions:parsed.recommended_actions||[],ai_confidence:parsed.confidence||0,is_high_risk:(parsed.risk_score||0)>=70}}];"
+      }
+    },
+    {
+      "id": "e007",
+      "name": "E - PG Update Risk Score",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        3900
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "UPDATE missions SET risk_score={{ $json.risk_score }},risk_level='{{ $json.risk_level }}',updated_at=NOW() WHERE id={{ $json.mission_id }};\nUPDATE candidates SET reliability_score=GREATEST(0,LEAST(100,100-{{ $json.risk_score }})),updated_at=NOW() WHERE id={{ $json.candidate_id }};"
+      }
+    },
+    {
+      "id": "e008",
+      "name": "E - IF High Risk",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        3900
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c01",
+              "leftValue": "={{ $json.is_high_risk }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e009",
+      "name": "E - HTTP Notify Risk HIGH",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2250,
+        3800
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({text:`🔴 *ALERTE RISQUE ${$json.risk_level}* — ${$json.name} | Score:${$json.risk_score}/100 | Mission:${$json.ats_mission_id} (${$json.mission_date})\\nFacteurs: ${($json.main_risk_factors||[]).join(', ')}\\nActions: ${($json.recommended_actions||[]).join(', ')}`}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "e010",
+      "name": "E - HTTP Trigger Backup from E",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2500,
+        3800
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/backup-finder",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({mission_id:$json.mission_id,ats_mission_id:$json.ats_mission_id,skill_required:$json.skill_required,location:$json.location,mission_date:$json.mission_date,recruiter_id:$json.recruiter_id,reason:'HIGH_RISK_AI_SCORING',risk_score:$json.risk_score}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "e011",
+      "name": "E - HTTP Notify Risk LOW",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2250,
+        4000
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({text:`🟢 *Score ${$json.risk_level}* — ${$json.name} | Score:${$json.risk_score}/100 | Mission:${$json.ats_mission_id}. Aucune action requise.`}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "e012",
+      "name": "E - Respond Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2750,
+        3900
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success:true,risk_score:$json.risk_score,risk_level:$json.risk_level,is_high_risk:$json.is_high_risk}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "f001",
+      "name": "F - Webhook Outcome Update",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        250,
+        4700
+      ],
+      "parameters": {
+        "path": "mission-outcome",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "f002",
+      "name": "F - Normalize Outcome",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        500,
+        4700
+      ],
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "i01",
+              "name": "mission_id",
+              "value": "={{ $json.body.mission_id }}",
+              "type": "string"
+            },
+            {
+              "id": "i02",
+              "name": "ats_mission_id",
+              "value": "={{ $json.body.ats_mission_id }}",
+              "type": "string"
+            },
+            {
+              "id": "i03",
+              "name": "outcome",
+              "value": "={{ ($json.body.outcome || '').toUpperCase() }}",
+              "type": "string"
+            },
+            {
+              "id": "i04",
+              "name": "recruiter_id",
+              "value": "={{ $json.body.recruiter_id }}",
+              "type": "string"
+            },
+            {
+              "id": "i05",
+              "name": "notes",
+              "value": "={{ $json.body.notes ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "i06",
+              "name": "arrival_time",
+              "value": "={{ $json.body.arrival_time ?? null }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f003",
+      "name": "F - Switch Outcome Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        750,
+        4700
+      ],
+      "parameters": {
+        "mode": "rules",
+        "options": {},
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.outcome }}",
+                    "rightValue": "PRESENT",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "PRESENT"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.outcome }}",
+                    "rightValue": "ABSENT",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ABSENT"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.outcome }}",
+                    "rightValue": "LATE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "LATE"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f004",
+      "name": "F - PG Update PRESENT",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        4550
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "UPDATE missions SET status='COMPLETED_PRESENT',outcome_notes='{{ $json.notes }}',completed_at=NOW(),updated_at=NOW() WHERE id={{ $json.mission_id }} RETURNING id,ats_candidate_id;"
+      }
+    },
+    {
+      "id": "f005",
+      "name": "F - PG Update ABSENT",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        4700
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "UPDATE missions SET status='COMPLETED_ABSENT',outcome_notes='{{ $json.notes }}',completed_at=NOW(),updated_at=NOW() WHERE id={{ $json.mission_id }} RETURNING id,ats_candidate_id;"
+      }
+    },
+    {
+      "id": "f006",
+      "name": "F - PG Update LATE",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        4850
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "UPDATE missions SET status='COMPLETED_LATE',arrival_time='{{ $('F - Normalize Outcome').item.json.arrival_time }}',outcome_notes='{{ $('F - Normalize Outcome').item.json.notes }}',completed_at=NOW(),updated_at=NOW() WHERE id={{ $('F - Normalize Outcome').item.json.mission_id }} RETURNING id,ats_candidate_id;"
+      }
+    },
+    {
+      "id": "f007",
+      "name": "F - PG Get Candidate PRESENT",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        4550
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "SELECT c.id AS candidate_id,c.name,c.phone,c.absence_rate,c.late_rate,c.no_reply_count,c.reliability_score,c.total_missions_count,c.present_count,c.absent_count,c.late_count FROM candidates c JOIN missions m ON m.ats_candidate_id=c.ats_candidate_id WHERE m.id={{ $json.id }} LIMIT 1;"
+      }
+    },
+    {
+      "id": "f008",
+      "name": "F - PG Get Candidate ABSENT",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        4700
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "SELECT c.id AS candidate_id,c.name,c.phone,c.absence_rate,c.late_rate,c.no_reply_count,c.reliability_score,c.total_missions_count,c.present_count,c.absent_count,c.late_count FROM candidates c JOIN missions m ON m.ats_candidate_id=c.ats_candidate_id WHERE m.id={{ $json.id }} LIMIT 1;"
+      }
+    },
+    {
+      "id": "f009",
+      "name": "F - PG Get Candidate LATE",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        4850
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "SELECT c.id AS candidate_id,c.name,c.phone,c.absence_rate,c.late_rate,c.no_reply_count,c.reliability_score,c.total_missions_count,c.present_count,c.absent_count,c.late_count FROM candidates c JOIN missions m ON m.ats_candidate_id=c.ats_candidate_id WHERE m.id={{ $json.id }} LIMIT 1;"
+      }
+    },
+    {
+      "id": "f010",
+      "name": "F - Recompute Metrics PRESENT",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        4550
+      ],
+      "parameters": {
+        "jsCode": "const c=$input.first().json;\nconst t=(c.total_missions_count||0)+1,p=(c.present_count||0)+1,a=c.absent_count||0,l=c.late_count||0;\nconst ar=t>0?a/t:0,lr=t>0?l/t:0;\nconst rs=Math.round(Math.max(0,Math.min(100,100-(ar*100*2)-(lr*100*1)-((c.no_reply_count||0)*3))));\nreturn [{json:{...c,outcome:'PRESENT',new_total:t,new_present:p,new_absent:a,new_late:l,new_absence_rate:ar,new_late_rate:lr,new_reliability_score:rs}}];"
+      }
+    },
+    {
+      "id": "f011",
+      "name": "F - Recompute Metrics ABSENT",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        4700
+      ],
+      "parameters": {
+        "jsCode": "const c=$input.first().json;\nconst t=(c.total_missions_count||0)+1,p=c.present_count||0,a=(c.absent_count||0)+1,l=c.late_count||0;\nconst ar=t>0?a/t:0,lr=t>0?l/t:0;\nconst rs=Math.round(Math.max(0,Math.min(100,100-(ar*100*2)-(lr*100*1)-((c.no_reply_count||0)*3))));\nreturn [{json:{...c,outcome:'ABSENT',new_total:t,new_present:p,new_absent:a,new_late:l,new_absence_rate:ar,new_late_rate:lr,new_reliability_score:rs}}];"
+      }
+    },
+    {
+      "id": "f012",
+      "name": "F - Recompute Metrics LATE",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        4850
+      ],
+      "parameters": {
+        "jsCode": "const c=$input.first().json;\nconst t=(c.total_missions_count||0)+1,p=c.present_count||0,a=c.absent_count||0,l=(c.late_count||0)+1;\nconst ar=t>0?a/t:0,lr=t>0?l/t:0;\nconst rs=Math.round(Math.max(0,Math.min(100,100-(ar*100*2)-(lr*100*1)-((c.no_reply_count||0)*3))));\nreturn [{json:{...c,outcome:'LATE',new_total:t,new_present:p,new_absent:a,new_late:l,new_absence_rate:ar,new_late_rate:lr,new_reliability_score:rs}}];"
+      }
+    },
+    {
+      "id": "f013",
+      "name": "F - Merge Outcomes",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1750,
+        4700
+      ],
+      "parameters": {
+        "mode": "passThrough",
+        "output": "input1"
+      }
+    },
+    {
+      "id": "f014",
+      "name": "F - PG Update Candidate Metrics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        4700
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "UPDATE candidates SET total_missions_count={{ $json.new_total }},present_count={{ $json.new_present }},absent_count={{ $json.new_absent }},late_count={{ $json.new_late }},absence_rate={{ $json.new_absence_rate }},late_rate={{ $json.new_late_rate }},reliability_score={{ $json.new_reliability_score }},updated_at=NOW() WHERE id={{ $json.candidate_id }};"
+      }
+    },
+    {
+      "id": "f015",
+      "name": "F - HTTP Trigger Rescore",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2250,
+        4700
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/risk-scoring",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({mission_id:$('F - Normalize Outcome').first().json.mission_id,candidate_id:$json.candidate_id,trigger:'OUTCOME_UPDATE_'+$json.outcome}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "f016",
+      "name": "F - HTTP Notify Recruiter Outcome",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2500,
+        4700
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({text:[$json.outcome==='PRESENT'?'✅':$json.outcome==='ABSENT'?'❌':'⏰',`*Résultat mission* — ${$json.name} : ${$json.outcome} | Fiabilité: ${$json.new_reliability_score}/100 (Présences:${$json.new_present} | Absences:${$json.new_absent} | Retards:${$json.new_late} / ${$json.new_total})`].join(' ')}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "f017",
+      "name": "F - Respond Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2750,
+        4700
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success:true,outcome:$json.outcome,new_reliability_score:$json.new_reliability_score}) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "A - Webhook Mission Event": {
+      "main": [
+        [
+          {
+            "node": "A - Normalize Mission Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A - Normalize Mission Data": {
+      "main": [
+        [
+          {
+            "node": "A - PG Upsert Mission",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A - PG Upsert Mission": {
+      "main": [
+        [
+          {
+            "node": "A - Merge Mission ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A - Merge Mission ID": {
+      "main": [
+        [
+          {
+            "node": "A - PG Upsert Candidate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A - PG Upsert Candidate": {
+      "main": [
+        [
+          {
+            "node": "A - Merge Candidate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A - Merge Candidate Data": {
+      "main": [
+        [
+          {
+            "node": "A - IF Already Confirmed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A - IF Already Confirmed": {
+      "main": [
+        [
+          {
+            "node": "A - Build Confirmation Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "A - No Change Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A - Build Confirmation Message": {
+      "main": [
+        [
+          {
+            "node": "A - HTTP Send SMS Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A - HTTP Send SMS Confirmation": {
+      "main": [
+        [
+          {
+            "node": "A - PG Save Reminder Schedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A - PG Save Reminder Schedule": {
+      "main": [
+        [
+          {
+            "node": "A - Respond Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B - Webhook Inbound Message": {
+      "main": [
+        [
+          {
+            "node": "B - Normalize Inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B - Normalize Inbound": {
+      "main": [
+        [
+          {
+            "node": "B - PG Lookup Active Mission",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B - PG Lookup Active Mission": {
+      "main": [
+        [
+          {
+            "node": "B - IF Mission Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B - IF Mission Found": {
+      "main": [
+        [
+          {
+            "node": "B - Classify Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "B - No Mission Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B - Classify Response": {
+      "main": [
+        [
+          {
+            "node": "B - Switch Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B - Switch Classification": {
+      "main": [
+        [
+          {
+            "node": "B - PG Set CONFIRMED",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "B - PG Set DECLINED",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "B - PG Set NEEDS CLARIFICATION",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "B - PG Set OPT OUT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B - PG Set CONFIRMED": {
+      "main": [
+        [
+          {
+            "node": "B - HTTP Notify YES",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B - HTTP Notify YES": {
+      "main": [
+        [
+          {
+            "node": "B - HTTP SMS Confirm Candidate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B - HTTP SMS Confirm Candidate": {
+      "main": [
+        [
+          {
+            "node": "B - Respond Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B - PG Set DECLINED": {
+      "main": [
+        [
+          {
+            "node": "B - HTTP Notify NO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B - HTTP Notify NO": {
+      "main": [
+        [
+          {
+            "node": "B - HTTP Trigger Backup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B - HTTP Trigger Backup": {
+      "main": [
+        [
+          {
+            "node": "B - Respond Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B - PG Set NEEDS CLARIFICATION": {
+      "main": [
+        [
+          {
+            "node": "B - HTTP Send Clarification SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B - HTTP Send Clarification SMS": {
+      "main": [
+        [
+          {
+            "node": "B - Respond Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B - PG Set OPT OUT": {
+      "main": [
+        [
+          {
+            "node": "B - HTTP Notify STOP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B - HTTP Notify STOP": {
+      "main": [
+        [
+          {
+            "node": "B - Respond Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C - Schedule Every 30min": {
+      "main": [
+        [
+          {
+            "node": "C - PG Get Missions To Process",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C - PG Get Missions To Process": {
+      "main": [
+        [
+          {
+            "node": "C - Decide Which Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C - Decide Which Reminder": {
+      "main": [
+        [
+          {
+            "node": "C - Switch Reminder Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C - Switch Reminder Action": {
+      "main": [
+        [
+          {
+            "node": "C - HTTP SMS Reminder J2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "C - HTTP SMS Reminder J1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "C - HTTP SMS Reminder H2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "C - PG Set HIGH RISK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C - HTTP SMS Reminder J2": {
+      "main": [
+        [
+          {
+            "node": "C - PG Mark Reminder 1 Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C - HTTP SMS Reminder J1": {
+      "main": [
+        [
+          {
+            "node": "C - PG Mark Reminder 2 Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C - HTTP SMS Reminder H2": {
+      "main": [
+        [
+          {
+            "node": "C - PG Mark Reminder 3 Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C - PG Set HIGH RISK": {
+      "main": [
+        [
+          {
+            "node": "C - HTTP Notify Recruiter HIGH RISK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C - HTTP Notify Recruiter HIGH RISK": {
+      "main": [
+        [
+          {
+            "node": "C - HTTP Trigger Risk Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "C - HTTP Trigger Backup from C",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "D - Webhook Backup Request": {
+      "main": [
+        [
+          {
+            "node": "D - Normalize Backup Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "D - Normalize Backup Request": {
+      "main": [
+        [
+          {
+            "node": "D - PG Query Backup Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "D - PG Query Backup Candidates": {
+      "main": [
+        [
+          {
+            "node": "D - IF Candidates Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "D - IF Candidates Found": {
+      "main": [
+        [
+          {
+            "node": "D - Format Shortlist",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "D - No Candidates Available",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "D - Format Shortlist": {
+      "main": [
+        [
+          {
+            "node": "D - HTTP Notify Recruiter Shortlist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "D - HTTP Notify Recruiter Shortlist": {
+      "main": [
+        [
+          {
+            "node": "D - PG Set REPLACEMENT IN PROGRESS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "D - PG Set REPLACEMENT IN PROGRESS": {
+      "main": [
+        [
+          {
+            "node": "D - IF Auto Pre Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "D - IF Auto Pre Contact": {
+      "main": [
+        [
+          {
+            "node": "D - HTTP SMS Pre Contact Backup",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "D - Respond Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "D - HTTP SMS Pre Contact Backup": {
+      "main": [
+        [
+          {
+            "node": "D - Respond Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "D - No Candidates Available": {
+      "main": [
+        [
+          {
+            "node": "D - HTTP Alert No Backup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "D - HTTP Alert No Backup": {
+      "main": [
+        [
+          {
+            "node": "D - Respond Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E - Webhook Risk Scoring": {
+      "main": [
+        [
+          {
+            "node": "E - Normalize Risk Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E - Normalize Risk Input": {
+      "main": [
+        [
+          {
+            "node": "E - PG Get Candidate History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E - PG Get Candidate History": {
+      "main": [
+        [
+          {
+            "node": "E - Compute Features",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E - Compute Features": {
+      "main": [
+        [
+          {
+            "node": "E - HTTP OpenAI Risk Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E - HTTP OpenAI Risk Analysis": {
+      "main": [
+        [
+          {
+            "node": "E - Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E - Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "E - PG Update Risk Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E - PG Update Risk Score": {
+      "main": [
+        [
+          {
+            "node": "E - IF High Risk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E - IF High Risk": {
+      "main": [
+        [
+          {
+            "node": "E - HTTP Notify Risk HIGH",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E - HTTP Notify Risk LOW",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E - HTTP Notify Risk HIGH": {
+      "main": [
+        [
+          {
+            "node": "E - HTTP Trigger Backup from E",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E - HTTP Trigger Backup from E": {
+      "main": [
+        [
+          {
+            "node": "E - Respond Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E - HTTP Notify Risk LOW": {
+      "main": [
+        [
+          {
+            "node": "E - Respond Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F - Webhook Outcome Update": {
+      "main": [
+        [
+          {
+            "node": "F - Normalize Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F - Normalize Outcome": {
+      "main": [
+        [
+          {
+            "node": "F - Switch Outcome Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F - Switch Outcome Type": {
+      "main": [
+        [
+          {
+            "node": "F - PG Update PRESENT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "F - PG Update ABSENT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "F - PG Update LATE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F - PG Update PRESENT": {
+      "main": [
+        [
+          {
+            "node": "F - PG Get Candidate PRESENT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F - PG Update ABSENT": {
+      "main": [
+        [
+          {
+            "node": "F - PG Get Candidate ABSENT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F - PG Update LATE": {
+      "main": [
+        [
+          {
+            "node": "F - PG Get Candidate LATE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F - PG Get Candidate PRESENT": {
+      "main": [
+        [
+          {
+            "node": "F - Recompute Metrics PRESENT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F - PG Get Candidate ABSENT": {
+      "main": [
+        [
+          {
+            "node": "F - Recompute Metrics ABSENT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F - PG Get Candidate LATE": {
+      "main": [
+        [
+          {
+            "node": "F - Recompute Metrics LATE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F - Recompute Metrics PRESENT": {
+      "main": [
+        [
+          {
+            "node": "F - Merge Outcomes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F - Recompute Metrics ABSENT": {
+      "main": [
+        [
+          {
+            "node": "F - Merge Outcomes",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "F - Recompute Metrics LATE": {
+      "main": [
+        [
+          {
+            "node": "F - Merge Outcomes",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "F - Merge Outcomes": {
+      "main": [
+        [
+          {
+            "node": "F - PG Update Candidate Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F - PG Update Candidate Metrics": {
+      "main": [
+        [
+          {
+            "node": "F - HTTP Trigger Rescore",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F - HTTP Trigger Rescore": {
+      "main": [
+        [
+          {
+            "node": "F - HTTP Notify Recruiter Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F - HTTP Notify Recruiter Outcome": {
+      "main": [
+        [
+          {
+            "node": "F - Respond Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "ERR_HANDLER"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "WF_MOA_COMPLETE",
+  "tags": [
+    "mission",
+    "ats",
+    "sms",
+    "ai",
+    "backup",
+    "scoring",
+    "complete"
+  ]
+}
