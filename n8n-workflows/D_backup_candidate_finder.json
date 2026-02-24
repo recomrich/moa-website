@@ -1,0 +1,252 @@
+{
+  "name": "D - Backup Candidate Finder",
+  "nodes": [
+    {
+      "id": "d001",
+      "name": "Webhook - Backup Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "parameters": {
+        "path": "backup-finder",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "d002",
+      "name": "Set - Normalize Request",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [500, 300],
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            { "id": "f01", "name": "mission_id", "value": "={{ $json.body.mission_id }}", "type": "string" },
+            { "id": "f02", "name": "ats_mission_id", "value": "={{ $json.body.ats_mission_id }}", "type": "string" },
+            { "id": "f03", "name": "skill_required", "value": "={{ $json.body.skill_required }}", "type": "string" },
+            { "id": "f04", "name": "location", "value": "={{ $json.body.location }}", "type": "string" },
+            { "id": "f05", "name": "mission_date", "value": "={{ $json.body.mission_date }}", "type": "string" },
+            { "id": "f06", "name": "recruiter_id", "value": "={{ $json.body.recruiter_id }}", "type": "string" },
+            { "id": "f07", "name": "reason", "value": "={{ $json.body.reason ?? 'DECLINED' }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d003",
+      "name": "PostgreSQL - Query Backup Candidates",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [750, 300],
+      "credentials": {
+        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  c.id,\n  c.ats_candidate_id,\n  c.name,\n  c.phone,\n  c.email,\n  c.skills,\n  c.location AS candidate_location,\n  c.absence_rate,\n  c.late_rate,\n  c.no_reply_count,\n  c.reliability_score,\n  c.last30d_missions,\n  -- Score composite: 40% reliability, 30% absence inverse, 20% late inverse, 10% response\n  (\n    COALESCE(c.reliability_score, 50) * 0.40\n    + (100 - COALESCE(c.absence_rate, 20) * 100) * 0.30\n    + (100 - COALESCE(c.late_rate, 20) * 100) * 0.20\n    + (100 - LEAST(c.no_reply_count * 10, 100)) * 0.10\n  ) AS ranking_score\nFROM candidates c\nWHERE\n  c.opt_out = FALSE\n  AND '{{ $json.skill_required }}' = ANY(c.skills)\n  AND c.id NOT IN (\n    SELECT ats_candidate_id FROM missions\n    WHERE mission_date = '{{ $json.mission_date }}'\n    AND status NOT IN ('DECLINED','COMPLETED_ABSENT')\n  )\n  AND c.absence_rate < 0.30\nORDER BY ranking_score DESC\nLIMIT 5;",
+        "options": {}
+      }
+    },
+    {
+      "id": "d004",
+      "name": "IF - Candidates Found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1000, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "c01",
+              "leftValue": "={{ $input.all().length }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d005",
+      "name": "Code - Format Shortlist",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 200],
+      "parameters": {
+        "jsCode": "const candidates = $input.all().map((item, idx) => item.json);\nconst missionData = $('Set - Normalize Request').first().json;\n\nlet shortlistText = `*Shortlist Backup — Mission ${missionData.ats_mission_id}*\\n`;\nshortlistText += `📅 Date: ${missionData.mission_date} | 📍 Lieu: ${missionData.location}\\n`;\nshortlistText += `🔧 Compétence: ${missionData.skill_required} | Raison: ${missionData.reason}\\n\\n`;\n\ncandidates.forEach((c, idx) => {\n  const score = Math.round(c.ranking_score || 0);\n  const absence = Math.round((c.absence_rate || 0) * 100);\n  const late = Math.round((c.late_rate || 0) * 100);\n  shortlistText += `${idx + 1}. *${c.name}* (Score: ${score}/100)\\n`;\n  shortlistText += `   📞 ${c.phone} | Absence: ${absence}% | Retard: ${late}% | Fiabilité: ${c.reliability_score || 'N/A'}\\n`;\n});\n\nreturn [{\n  json: {\n    shortlist: candidates,\n    shortlist_text: shortlistText,\n    top_candidate: candidates[0] || null,\n    mission: missionData,\n    count: candidates.length\n  }\n}];"
+      }
+    },
+    {
+      "id": "d006",
+      "name": "HTTP - Notify Recruiter Shortlist",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1500, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ text: $json.shortlist_text, blocks: [{ type: 'section', text: { type: 'mrkdwn', text: $json.shortlist_text } }, { type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: 'Contacter Backup #1' }, action_id: 'contact_backup_1', value: JSON.stringify({ candidate_id: $json.top_candidate?.id, mission_id: $json.mission?.mission_id }) }] }] }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "d007",
+      "name": "PG - Update Mission REPLACEMENT_IN_PROGRESS",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1750, 200],
+      "credentials": {
+        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE missions SET status = 'REPLACEMENT_IN_PROGRESS', updated_at = NOW()\nWHERE id = {{ $json.mission?.mission_id }};",
+        "options": {}
+      }
+    },
+    {
+      "id": "d008",
+      "name": "IF - Auto Pre-Contact Top Backup",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 200],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "c02",
+              "leftValue": "={{ $json.top_candidate?.reliability_score ?? 0 }}",
+              "rightValue": 80,
+              "operator": { "type": "number", "operation": "gte" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d009",
+      "name": "HTTP - SMS Pre-Contact Top Backup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2250, 100],
+      "credentials": {
+        "httpBasicAuth": { "id": "twilio-creds", "name": "Twilio Basic Auth" }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $credentials.username }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "To", "value": "={{ $json.top_candidate?.phone }}" },
+            { "name": "From", "value": "TWILIO_PHONE_NUMBER" },
+            { "name": "Body", "value": "=Bonjour {{ $json.top_candidate?.name }}, une opportunité de mission urgente est disponible le {{ $json.mission?.mission_date }} ({{ $json.mission?.skill_required }}) à {{ $json.mission?.location }}. Intéressé(e)? Répondez OUI. Ref: {{ $json.mission?.ats_mission_id }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d010",
+      "name": "No Candidates Available",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1250, 400],
+      "parameters": {}
+    },
+    {
+      "id": "d011",
+      "name": "HTTP - Alert Recruiter No Backup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1500, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ text: `⚠️ *AUCUN BACKUP DISPONIBLE* — Aucun candidat qualifié trouvé pour la mission du ${$('Set - Normalize Request').first().json.mission_date} (${$('Set - Normalize Request').first().json.skill_required} — ${$('Set - Normalize Request').first().json.location}). Action manuelle requise! Ref: ${$('Set - Normalize Request').first().json.ats_mission_id}` }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "d012",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2500, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, candidates_found: $('Code - Format Shortlist').first()?.json?.count ?? 0 }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - Backup Request": {
+      "main": [[{ "node": "Set - Normalize Request", "type": "main", "index": 0 }]]
+    },
+    "Set - Normalize Request": {
+      "main": [[{ "node": "PostgreSQL - Query Backup Candidates", "type": "main", "index": 0 }]]
+    },
+    "PostgreSQL - Query Backup Candidates": {
+      "main": [[{ "node": "IF - Candidates Found", "type": "main", "index": 0 }]]
+    },
+    "IF - Candidates Found": {
+      "main": [
+        [{ "node": "Code - Format Shortlist", "type": "main", "index": 0 }],
+        [{ "node": "No Candidates Available", "type": "main", "index": 0 }]
+      ]
+    },
+    "Code - Format Shortlist": {
+      "main": [[{ "node": "HTTP - Notify Recruiter Shortlist", "type": "main", "index": 0 }]]
+    },
+    "HTTP - Notify Recruiter Shortlist": {
+      "main": [[{ "node": "PG - Update Mission REPLACEMENT_IN_PROGRESS", "type": "main", "index": 0 }]]
+    },
+    "PG - Update Mission REPLACEMENT_IN_PROGRESS": {
+      "main": [[{ "node": "IF - Auto Pre-Contact Top Backup", "type": "main", "index": 0 }]]
+    },
+    "IF - Auto Pre-Contact Top Backup": {
+      "main": [
+        [{ "node": "HTTP - SMS Pre-Contact Top Backup", "type": "main", "index": 0 }],
+        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }]
+      ]
+    },
+    "HTTP - SMS Pre-Contact Top Backup": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    },
+    "No Candidates Available": {
+      "main": [[{ "node": "HTTP - Alert Recruiter No Backup", "type": "main", "index": 0 }]]
+    },
+    "HTTP - Alert Recruiter No Backup": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "ERR_HANDLER"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "WF_D_BACKUP_FINDER",
+  "tags": ["backup", "candidat", "mission", "remplacement"]
+}

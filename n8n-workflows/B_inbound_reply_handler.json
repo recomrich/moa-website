@@ -1,0 +1,382 @@
+{
+  "name": "B - Inbound Reply Handler",
+  "nodes": [
+    {
+      "id": "b001",
+      "name": "Webhook - Inbound Message",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "parameters": {
+        "path": "inbound-reply",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "b002",
+      "name": "Code - Normalize Inbound",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300],
+      "parameters": {
+        "jsCode": "// Normalise SMS (Twilio), WhatsApp (Twilio), ou Email\nconst body = $input.first().json.body || $input.first().json;\nconst channel = body.channel || (body.From?.includes('whatsapp') ? 'whatsapp' : body.To ? 'sms' : 'email');\n\nlet sender_phone = null;\nlet sender_email = null;\nlet message_text = '';\n\nif (channel === 'sms' || channel === 'whatsapp') {\n  sender_phone = (body.From || '').replace('whatsapp:', '');\n  message_text = body.Body || '';\n} else if (channel === 'email') {\n  sender_email = body.from || body.sender || '';\n  message_text = body.text || body.subject || '';\n}\n\nreturn [{\n  json: {\n    channel,\n    sender_phone,\n    sender_email,\n    message_text: message_text.trim(),\n    raw: body\n  }\n}];"
+      }
+    },
+    {
+      "id": "b003",
+      "name": "PostgreSQL - Lookup Active Mission",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [750, 300],
+      "credentials": {
+        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT m.id AS mission_id, m.ats_mission_id, m.mission_date, m.start_time, m.location,\n       m.skill_required, m.status, m.recruiter_id,\n       c.id AS candidate_id, c.name AS candidate_name, c.phone, c.email,\n       r.email AS recruiter_email, r.slack_user_id AS recruiter_slack\nFROM missions m\nJOIN candidates c ON c.id = m.ats_candidate_id\nLEFT JOIN recruiters r ON r.id = m.recruiter_id\nWHERE (\n  ('{{ $json.sender_phone }}' != '' AND c.phone = '{{ $json.sender_phone }}')\n  OR\n  ('{{ $json.sender_email }}' != '' AND c.email = '{{ $json.sender_email }}')\n)\nAND m.status NOT IN ('COMPLETED_PRESENT','COMPLETED_ABSENT','COMPLETED_LATE','DECLINED')\nAND m.mission_date >= CURRENT_DATE\nORDER BY m.mission_date ASC\nLIMIT 1;",
+        "options": {}
+      }
+    },
+    {
+      "id": "b004",
+      "name": "IF - Mission Found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1000, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "c01",
+              "leftValue": "={{ $json.mission_id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b005",
+      "name": "Code - Classify Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 200],
+      "parameters": {
+        "jsCode": "const text = ($input.first().json.message_text || '').toUpperCase().trim();\nconst missionData = $input.first().json;\n\nconst YES_PATTERNS = ['OUI', 'YES', 'OK', 'CONFIRME', 'CONFIRMÉ', 'D ACCORD', 'D\\'ACCORD', 'DACCORD', 'PRESENT', 'PRÉSENT', '1'];\nconst NO_PATTERNS = ['NON', 'NO', 'REFUSE', 'REFUSÉ', 'IMPOSSIBLE', 'PAS DISPONIBLE', 'INDISPONIBLE', '0', 'ANNULE', 'ANNULÉ'];\nconst STOP_PATTERNS = ['STOP', 'DESINSCRIPTION', 'DÉSABONNER', 'UNSUBSCRIBE', 'CANCEL'];\n\nlet classification = 'UNCLEAR';\n\nif (STOP_PATTERNS.some(p => text.includes(p))) {\n  classification = 'STOP';\n} else if (YES_PATTERNS.some(p => text === p || text.startsWith(p + ' ') || text.startsWith(p + ','))) {\n  classification = 'YES';\n} else if (NO_PATTERNS.some(p => text === p || text.startsWith(p + ' ') || text.startsWith(p + ','))) {\n  classification = 'NO';\n}\n\nreturn [{\n  json: {\n    ...missionData,\n    classification,\n    message_text: $input.first().json.message_text\n  }\n}];"
+      }
+    },
+    {
+      "id": "b006",
+      "name": "Switch - Route by Classification",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1500, 200],
+      "parameters": {
+        "mode": "rules",
+        "options": {},
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "conditions": [{ "leftValue": "={{ $json.classification }}", "rightValue": "YES", "operator": { "type": "string", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "YES"
+            },
+            {
+              "conditions": {
+                "conditions": [{ "leftValue": "={{ $json.classification }}", "rightValue": "NO", "operator": { "type": "string", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "NO"
+            },
+            {
+              "conditions": {
+                "conditions": [{ "leftValue": "={{ $json.classification }}", "rightValue": "UNCLEAR", "operator": { "type": "string", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "UNCLEAR"
+            },
+            {
+              "conditions": {
+                "conditions": [{ "leftValue": "={{ $json.classification }}", "rightValue": "STOP", "operator": { "type": "string", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "STOP"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b007",
+      "name": "PG - Set CONFIRMED",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1750, 100],
+      "credentials": {
+        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE missions SET status = 'CONFIRMED', confirmed_at = NOW(), updated_at = NOW()\nWHERE id = {{ $json.mission_id }};",
+        "options": {}
+      }
+    },
+    {
+      "id": "b008",
+      "name": "HTTP - Notify Recruiter YES",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ text: `✅ *Confirmation reçue* — ${$json.candidate_name} a CONFIRMÉ la mission du ${$json.mission_date} (${$json.location}). Ref: ${$json.ats_mission_id}` }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b009",
+      "name": "HTTP - SMS Confirm to Candidate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "credentials": {
+        "httpBasicAuth": { "id": "twilio-creds", "name": "Twilio Basic Auth" }
+      },
+      "position": [2250, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $credentials.username }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "To", "value": "={{ $json.phone }}" },
+            { "name": "From", "value": "TWILIO_PHONE_NUMBER" },
+            { "name": "Body", "value": "=Merci {{ $json.candidate_name }}, votre présence est bien confirmée pour le {{ $json.mission_date }} à {{ $json.location }}. À bientôt !" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b010",
+      "name": "PG - Set DECLINED",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1750, 250],
+      "credentials": {
+        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE missions SET status = 'DECLINED', updated_at = NOW()\nWHERE id = {{ $json.mission_id }};\nUPDATE candidates SET no_reply_declined = no_reply_declined + 1, updated_at = NOW()\nWHERE id = {{ $json.candidate_id }};",
+        "options": {}
+      }
+    },
+    {
+      "id": "b011",
+      "name": "HTTP - Notify Recruiter NO + Trigger Backup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 250],
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ text: `❌ *Refus reçu* — ${$json.candidate_name} a DÉCLINÉ la mission du ${$json.mission_date} (${$json.location}). Recherche de backup en cours... Ref: ${$json.ats_mission_id}` }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b012",
+      "name": "HTTP - Trigger Backup Workflow D",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2250, 250],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://localhost:5678/webhook/backup-finder",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ mission_id: $json.mission_id, ats_mission_id: $json.ats_mission_id, skill_required: $json.skill_required, location: $json.location, mission_date: $json.mission_date, recruiter_id: $json.recruiter_id, reason: 'DECLINED' }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b013",
+      "name": "PG - Set NEEDS_CLARIFICATION",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1750, 400],
+      "credentials": {
+        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE missions SET status = 'NEEDS_CLARIFICATION', updated_at = NOW()\nWHERE id = {{ $json.mission_id }};",
+        "options": {}
+      }
+    },
+    {
+      "id": "b014",
+      "name": "HTTP - Send Clarification SMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "credentials": {
+        "httpBasicAuth": { "id": "twilio-creds", "name": "Twilio Basic Auth" }
+      },
+      "position": [2000, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $credentials.username }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "To", "value": "={{ $json.phone }}" },
+            { "name": "From", "value": "TWILIO_PHONE_NUMBER" },
+            { "name": "Body", "value": "=Bonjour {{ $json.candidate_name }}, nous n'avons pas bien compris votre réponse. Répondez simplement OUI ou NON pour la mission du {{ $json.mission_date }}." }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b015",
+      "name": "PG - Set OPT_OUT",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1750, 550],
+      "credentials": {
+        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE candidates SET opt_out = TRUE, updated_at = NOW()\nWHERE id = {{ $json.candidate_id }};\nUPDATE missions SET status = 'DECLINED', updated_at = NOW()\nWHERE id = {{ $json.mission_id }};",
+        "options": {}
+      }
+    },
+    {
+      "id": "b016",
+      "name": "HTTP - Notify Recruiter STOP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 550],
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ text: `🚫 *STOP reçu* — ${$json.candidate_name} s'est désinscrit des notifications. Profil marqué opt-out. Ref: ${$json.ats_mission_id}` }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b017",
+      "name": "No Mission Found",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1250, 400],
+      "parameters": {}
+    },
+    {
+      "id": "b018",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2500, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"success\": true}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - Inbound Message": {
+      "main": [[{ "node": "Code - Normalize Inbound", "type": "main", "index": 0 }]]
+    },
+    "Code - Normalize Inbound": {
+      "main": [[{ "node": "PostgreSQL - Lookup Active Mission", "type": "main", "index": 0 }]]
+    },
+    "PostgreSQL - Lookup Active Mission": {
+      "main": [[{ "node": "IF - Mission Found", "type": "main", "index": 0 }]]
+    },
+    "IF - Mission Found": {
+      "main": [
+        [{ "node": "Code - Classify Response", "type": "main", "index": 0 }],
+        [{ "node": "No Mission Found", "type": "main", "index": 0 }]
+      ]
+    },
+    "Code - Classify Response": {
+      "main": [[{ "node": "Switch - Route by Classification", "type": "main", "index": 0 }]]
+    },
+    "Switch - Route by Classification": {
+      "main": [
+        [{ "node": "PG - Set CONFIRMED", "type": "main", "index": 0 }],
+        [{ "node": "PG - Set DECLINED", "type": "main", "index": 0 }],
+        [{ "node": "PG - Set NEEDS_CLARIFICATION", "type": "main", "index": 0 }],
+        [{ "node": "PG - Set OPT_OUT", "type": "main", "index": 0 }]
+      ]
+    },
+    "PG - Set CONFIRMED": {
+      "main": [[{ "node": "HTTP - Notify Recruiter YES", "type": "main", "index": 0 }]]
+    },
+    "HTTP - Notify Recruiter YES": {
+      "main": [[{ "node": "HTTP - SMS Confirm to Candidate", "type": "main", "index": 0 }]]
+    },
+    "HTTP - SMS Confirm to Candidate": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    },
+    "PG - Set DECLINED": {
+      "main": [[{ "node": "HTTP - Notify Recruiter NO + Trigger Backup", "type": "main", "index": 0 }]]
+    },
+    "HTTP - Notify Recruiter NO + Trigger Backup": {
+      "main": [[{ "node": "HTTP - Trigger Backup Workflow D", "type": "main", "index": 0 }]]
+    },
+    "HTTP - Trigger Backup Workflow D": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    },
+    "PG - Set NEEDS_CLARIFICATION": {
+      "main": [[{ "node": "HTTP - Send Clarification SMS", "type": "main", "index": 0 }]]
+    },
+    "HTTP - Send Clarification SMS": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    },
+    "PG - Set OPT_OUT": {
+      "main": [[{ "node": "HTTP - Notify Recruiter STOP", "type": "main", "index": 0 }]]
+    },
+    "HTTP - Notify Recruiter STOP": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "ERR_HANDLER"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "WF_B_INBOUND_REPLY",
+  "tags": ["mission", "sms", "reply", "classification"]
+}

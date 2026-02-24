@@ -1,0 +1,324 @@
+{
+  "name": "C - Reminder Engine",
+  "nodes": [
+    {
+      "id": "c001",
+      "name": "Schedule - Every 30min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c002",
+      "name": "PostgreSQL - Get Missions To Process",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [500, 300],
+      "credentials": {
+        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  m.id AS mission_id,\n  m.ats_mission_id,\n  m.mission_date,\n  m.start_time,\n  m.location,\n  m.skill_required,\n  m.status,\n  m.recruiter_id,\n  m.reminder_1_scheduled_at,\n  m.reminder_2_scheduled_at,\n  m.reminder_3_scheduled_at,\n  m.reminder_1_sent_at,\n  m.reminder_2_sent_at,\n  m.reminder_3_sent_at,\n  c.id AS candidate_id,\n  c.name AS candidate_name,\n  c.phone,\n  c.email,\n  r.email AS recruiter_email,\n  r.slack_user_id AS recruiter_slack\nFROM missions m\nJOIN candidates c ON c.ats_candidate_id = m.ats_candidate_id\nLEFT JOIN recruiters r ON r.id = m.recruiter_id\nWHERE m.status IN ('PENDING_CONFIRMATION','REMINDER_1_SENT','REMINDER_2_SENT','REMINDER_3_SENT')\nAND m.mission_date >= CURRENT_DATE\nAND c.opt_out = FALSE\nORDER BY m.mission_date ASC;",
+        "options": {}
+      }
+    },
+    {
+      "id": "c003",
+      "name": "Code - Decide Which Reminder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 300],
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst results = [];\n\nfor (const item of $input.all()) {\n  const d = item.json;\n  const missionDateTime = new Date(`${d.mission_date}T${d.start_time || '09:00'}:00`);\n  const diffMs = missionDateTime - now;\n  const diffHours = diffMs / (1000 * 60 * 60);\n\n  let action = null;\n\n  // H-2 check: within 2h of start and reminder3 not sent\n  if (diffHours <= 2 && diffHours > 0 && !d.reminder_3_sent_at) {\n    action = 'REMINDER_3_H2';\n  }\n  // H-2 overdue (past start time) and still no confirmation\n  else if (diffHours <= 0 && diffHours > -1 && !d.reminder_3_sent_at) {\n    action = 'HIGH_RISK_NO_RESPONSE';\n  }\n  // J-1 at 16:00 window (between 15:45 and 16:30 the day before)\n  else if (!d.reminder_2_sent_at && d.reminder_2_scheduled_at) {\n    const r2 = new Date(d.reminder_2_scheduled_at);\n    const r2Diff = (now - r2) / (1000 * 60);\n    if (r2Diff >= 0 && r2Diff < 45) action = 'REMINDER_2_J1';\n  }\n  // J-2 at 10:00 window\n  else if (!d.reminder_1_sent_at && d.reminder_1_scheduled_at) {\n    const r1 = new Date(d.reminder_1_scheduled_at);\n    const r1Diff = (now - r1) / (1000 * 60);\n    if (r1Diff >= 0 && r1Diff < 45) action = 'REMINDER_1_J2';\n  }\n\n  if (action) {\n    results.push({ json: { ...d, action, now: now.toISOString(), diffHours } });\n  }\n}\n\nreturn results;"
+      }
+    },
+    {
+      "id": "c004",
+      "name": "Switch - Reminder Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1000, 300],
+      "parameters": {
+        "mode": "rules",
+        "options": {},
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "conditions": [{ "leftValue": "={{ $json.action }}", "rightValue": "REMINDER_1_J2", "operator": { "type": "string", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Reminder_J2"
+            },
+            {
+              "conditions": {
+                "conditions": [{ "leftValue": "={{ $json.action }}", "rightValue": "REMINDER_2_J1", "operator": { "type": "string", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Reminder_J1"
+            },
+            {
+              "conditions": {
+                "conditions": [{ "leftValue": "={{ $json.action }}", "rightValue": "REMINDER_3_H2", "operator": { "type": "string", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Reminder_H2"
+            },
+            {
+              "conditions": {
+                "conditions": [{ "leftValue": "={{ $json.action }}", "rightValue": "HIGH_RISK_NO_RESPONSE", "operator": { "type": "string", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "HighRisk"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c005",
+      "name": "HTTP - SMS Reminder J-2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 100],
+      "credentials": {
+        "httpBasicAuth": { "id": "twilio-creds", "name": "Twilio Basic Auth" }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $credentials.username }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "To", "value": "={{ $json.phone }}" },
+            { "name": "From", "value": "TWILIO_PHONE_NUMBER" },
+            { "name": "Body", "value": "=[Rappel J-2] Bonjour {{ $json.candidate_name }}, vous avez une mission dans 2 jours le {{ $json.mission_date }} à {{ $json.start_time }} ({{ $json.location }}). Confirmez en répondant OUI ou NON. Ref: {{ $json.ats_mission_id }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c006",
+      "name": "PG - Mark Reminder 1 Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1500, 100],
+      "credentials": {
+        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE missions SET status = 'REMINDER_1_SENT', reminder_1_sent_at = NOW(), updated_at = NOW()\nWHERE id = {{ $json.mission_id }};",
+        "options": {}
+      }
+    },
+    {
+      "id": "c007",
+      "name": "HTTP - SMS Reminder J-1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 250],
+      "credentials": {
+        "httpBasicAuth": { "id": "twilio-creds", "name": "Twilio Basic Auth" }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $credentials.username }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "To", "value": "={{ $json.phone }}" },
+            { "name": "From", "value": "TWILIO_PHONE_NUMBER" },
+            { "name": "Body", "value": "=[Rappel J-1] Bonjour {{ $json.candidate_name }}, votre mission est DEMAIN {{ $json.mission_date }} à {{ $json.start_time }} — {{ $json.location }}. Répondez OUI pour confirmer ou NON pour décliner. Ref: {{ $json.ats_mission_id }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c008",
+      "name": "PG - Mark Reminder 2 Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1500, 250],
+      "credentials": {
+        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE missions SET status = 'REMINDER_2_SENT', reminder_2_sent_at = NOW(), updated_at = NOW()\nWHERE id = {{ $json.mission_id }};",
+        "options": {}
+      }
+    },
+    {
+      "id": "c009",
+      "name": "HTTP - SMS Reminder H-2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 400],
+      "credentials": {
+        "httpBasicAuth": { "id": "twilio-creds", "name": "Twilio Basic Auth" }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $credentials.username }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "To", "value": "={{ $json.phone }}" },
+            { "name": "From", "value": "TWILIO_PHONE_NUMBER" },
+            { "name": "Body", "value": "=[URGENT H-2] Bonjour {{ $json.candidate_name }}, votre mission commence dans 2h à {{ $json.location }}. Confirmez MAINTENANT en répondant OUI ou NON. Ref: {{ $json.ats_mission_id }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c010",
+      "name": "PG - Mark Reminder 3 Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1500, 400],
+      "credentials": {
+        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE missions SET status = 'REMINDER_3_SENT', reminder_3_sent_at = NOW(), updated_at = NOW()\nWHERE id = {{ $json.mission_id }};",
+        "options": {}
+      }
+    },
+    {
+      "id": "c011",
+      "name": "PG - Set HIGH_RISK_NO_RESPONSE",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1250, 550],
+      "credentials": {
+        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE missions SET status = 'HIGH_RISK_NO_RESPONSE', updated_at = NOW()\nWHERE id = {{ $json.mission_id }};\nUPDATE candidates SET no_reply_count = no_reply_count + 1, updated_at = NOW()\nWHERE id = {{ $json.candidate_id }};",
+        "options": {}
+      }
+    },
+    {
+      "id": "c012",
+      "name": "HTTP - Notify Recruiter HIGH RISK",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1500, 550],
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ text: `🚨 *RISQUE ÉLEVÉ — NON RÉPONSE* — ${$json.candidate_name} n'a pas confirmé la mission du ${$json.mission_date} (${$json.location}). La mission commence dans moins de 2h. Backup en cours... Ref: ${$json.ats_mission_id}` }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "c013",
+      "name": "HTTP - Trigger Risk Scoring Workflow E",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1750, 500],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/risk-scoring",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ mission_id: $json.mission_id, candidate_id: $json.candidate_id, trigger: 'HIGH_RISK_NO_RESPONSE' }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "c014",
+      "name": "HTTP - Trigger Backup Workflow D",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1750, 620],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/backup-finder",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ mission_id: $json.mission_id, ats_mission_id: $json.ats_mission_id, skill_required: $json.skill_required, location: $json.location, mission_date: $json.mission_date, recruiter_id: $json.recruiter_id, reason: 'HIGH_RISK_NO_RESPONSE' }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Schedule - Every 30min": {
+      "main": [[{ "node": "PostgreSQL - Get Missions To Process", "type": "main", "index": 0 }]]
+    },
+    "PostgreSQL - Get Missions To Process": {
+      "main": [[{ "node": "Code - Decide Which Reminder", "type": "main", "index": 0 }]]
+    },
+    "Code - Decide Which Reminder": {
+      "main": [[{ "node": "Switch - Reminder Action", "type": "main", "index": 0 }]]
+    },
+    "Switch - Reminder Action": {
+      "main": [
+        [{ "node": "HTTP - SMS Reminder J-2", "type": "main", "index": 0 }],
+        [{ "node": "HTTP - SMS Reminder J-1", "type": "main", "index": 0 }],
+        [{ "node": "HTTP - SMS Reminder H-2", "type": "main", "index": 0 }],
+        [{ "node": "PG - Set HIGH_RISK_NO_RESPONSE", "type": "main", "index": 0 }]
+      ]
+    },
+    "HTTP - SMS Reminder J-2": {
+      "main": [[{ "node": "PG - Mark Reminder 1 Sent", "type": "main", "index": 0 }]]
+    },
+    "HTTP - SMS Reminder J-1": {
+      "main": [[{ "node": "PG - Mark Reminder 2 Sent", "type": "main", "index": 0 }]]
+    },
+    "HTTP - SMS Reminder H-2": {
+      "main": [[{ "node": "PG - Mark Reminder 3 Sent", "type": "main", "index": 0 }]]
+    },
+    "PG - Set HIGH_RISK_NO_RESPONSE": {
+      "main": [[{ "node": "HTTP - Notify Recruiter HIGH RISK", "type": "main", "index": 0 }]]
+    },
+    "HTTP - Notify Recruiter HIGH RISK": {
+      "main": [
+        [{ "node": "HTTP - Trigger Risk Scoring Workflow E", "type": "main", "index": 0 }],
+        [{ "node": "HTTP - Trigger Backup Workflow D", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "ERR_HANDLER"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "WF_C_REMINDER_ENGINE",
+  "tags": ["reminder", "cron", "mission", "sms"]
+}

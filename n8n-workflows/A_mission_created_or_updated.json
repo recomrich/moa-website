@@ -1,0 +1,241 @@
+{
+  "name": "A - Mission Created or Updated",
+  "nodes": [
+    {
+      "id": "a001",
+      "name": "Webhook - Mission Event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "parameters": {
+        "path": "mission-event",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "a002",
+      "name": "Set - Normalize Mission Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [500, 300],
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            { "id": "f01", "name": "ats_mission_id", "value": "={{ $json.body.mission_id ?? $json.body.id }}", "type": "string" },
+            { "id": "f02", "name": "ats_candidate_id", "value": "={{ $json.body.candidate_id }}", "type": "string" },
+            { "id": "f03", "name": "recruiter_id", "value": "={{ $json.body.recruiter_id }}", "type": "string" },
+            { "id": "f04", "name": "mission_date", "value": "={{ $json.body.mission_date }}", "type": "string" },
+            { "id": "f05", "name": "start_time", "value": "={{ $json.body.start_time ?? '09:00' }}", "type": "string" },
+            { "id": "f06", "name": "location", "value": "={{ $json.body.location }}", "type": "string" },
+            { "id": "f07", "name": "skill_required", "value": "={{ $json.body.skill }}", "type": "string" },
+            { "id": "f08", "name": "candidate_phone", "value": "={{ $json.body.candidate_phone }}", "type": "string" },
+            { "id": "f09", "name": "candidate_email", "value": "={{ $json.body.candidate_email }}", "type": "string" },
+            { "id": "f10", "name": "candidate_name", "value": "={{ $json.body.candidate_name }}", "type": "string" },
+            { "id": "f11", "name": "event_type", "value": "={{ $json.body.event_type ?? 'created' }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a003",
+      "name": "PostgreSQL - Upsert Mission",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [750, 300],
+      "credentials": {
+        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO missions (ats_mission_id, ats_candidate_id, recruiter_id, mission_date, start_time, location, skill_required, status, created_at, updated_at)\nVALUES ('{{ $json.ats_mission_id }}', '{{ $json.ats_candidate_id }}', '{{ $json.recruiter_id }}', '{{ $json.mission_date }}', '{{ $json.start_time }}', '{{ $json.location }}', '{{ $json.skill_required }}', 'PENDING_CONFIRMATION', NOW(), NOW())\nON CONFLICT (ats_mission_id) DO UPDATE SET\n  ats_candidate_id = EXCLUDED.ats_candidate_id,\n  recruiter_id = EXCLUDED.recruiter_id,\n  mission_date = EXCLUDED.mission_date,\n  start_time = EXCLUDED.start_time,\n  location = EXCLUDED.location,\n  skill_required = EXCLUDED.skill_required,\n  status = CASE WHEN missions.status = 'CONFIRMED' THEN 'CONFIRMED' ELSE 'PENDING_CONFIRMATION' END,\n  updated_at = NOW()\nRETURNING id, status;",
+        "options": {}
+      }
+    },
+    {
+      "id": "a004",
+      "name": "Set - Add Mission ID",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [1000, 300],
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            { "id": "f12", "name": "internal_mission_id", "value": "={{ $json.id }}", "type": "string" },
+            { "id": "f13", "name": "current_status", "value": "={{ $json.status }}", "type": "string" }
+          ]
+        },
+        "options": { "includeBinaryData": false }
+      }
+    },
+    {
+      "id": "a005",
+      "name": "PostgreSQL - Upsert Candidate",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1250, 300],
+      "credentials": {
+        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO candidates (ats_candidate_id, name, phone, email, created_at, updated_at)\nVALUES ('{{ $('Set - Normalize Mission Data').item.json.ats_candidate_id }}', '{{ $('Set - Normalize Mission Data').item.json.candidate_name }}', '{{ $('Set - Normalize Mission Data').item.json.candidate_phone }}', '{{ $('Set - Normalize Mission Data').item.json.candidate_email }}', NOW(), NOW())\nON CONFLICT (ats_candidate_id) DO UPDATE SET\n  name = EXCLUDED.name,\n  phone = EXCLUDED.phone,\n  email = EXCLUDED.email,\n  updated_at = NOW()\nRETURNING id, phone, email, name;",
+        "options": {}
+      }
+    },
+    {
+      "id": "a006",
+      "name": "IF - Already Confirmed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1500, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "c01",
+              "leftValue": "={{ $('Set - Add Mission ID').item.json.current_status }}",
+              "rightValue": "CONFIRMED",
+              "operator": { "type": "string", "operation": "notEquals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a007",
+      "name": "Code - Build Confirmation Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1750, 200],
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst missionDate = new Date(item.mission_date);\nconst dateStr = missionDate.toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\nconst candidateName = item.name || item.candidate_name || 'Candidat';\nconst location = item.location || 'à préciser';\nconst startTime = item.start_time || '09:00';\n\nconst smsMessage = `Bonjour ${candidateName}, vous êtes proposé(e) pour une mission le ${dateStr} à ${startTime} (${location}). Répondez OUI pour confirmer ou NON pour décliner. Ref: ${item.ats_mission_id}`;\n\nreturn [{\n  json: {\n    ...item,\n    sms_body: smsMessage,\n    to_phone: item.phone,\n    mission_date_formatted: dateStr\n  }\n}];"
+      }
+    },
+    {
+      "id": "a008",
+      "name": "HTTP - Send SMS Twilio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 200],
+      "credentials": {
+        "httpBasicAuth": { "id": "twilio-creds", "name": "Twilio Basic Auth" }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $credentials.username }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "To", "value": "={{ $json.to_phone }}" },
+            { "name": "From", "value": "=TWILIO_PHONE_NUMBER" },
+            { "name": "Body", "value": "={{ $json.sms_body }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a009",
+      "name": "Code - Compute Reminder Times",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2250, 200],
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst missionDate = new Date(item.mission_date + 'T' + (item.start_time || '09:00') + ':00');\n\n// J-2 at 10:00\nconst reminder1 = new Date(missionDate);\nreminder1.setDate(reminder1.getDate() - 2);\nreminder1.setHours(10, 0, 0, 0);\n\n// J-1 at 16:00\nconst reminder2 = new Date(missionDate);\nreminder2.setDate(reminder2.getDate() - 1);\nreminder2.setHours(16, 0, 0, 0);\n\n// H-2\nconst reminder3 = new Date(missionDate);\nreminder3.setHours(reminder3.getHours() - 2);\n\nreturn [{\n  json: {\n    ...item,\n    reminder_1_scheduled: reminder1.toISOString(),\n    reminder_2_scheduled: reminder2.toISOString(),\n    reminder_3_scheduled: reminder3.toISOString()\n  }\n}];"
+      }
+    },
+    {
+      "id": "a010",
+      "name": "PostgreSQL - Save Reminder Schedule",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [2500, 200],
+      "credentials": {
+        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE missions SET\n  reminder_1_scheduled_at = '{{ $json.reminder_1_scheduled }}',\n  reminder_2_scheduled_at = '{{ $json.reminder_2_scheduled }}',\n  reminder_3_scheduled_at = '{{ $json.reminder_3_scheduled }}',\n  status = 'PENDING_CONFIRMATION',\n  updated_at = NOW()\nWHERE id = {{ $('Set - Add Mission ID').item.json.internal_mission_id }};",
+        "options": {}
+      }
+    },
+    {
+      "id": "a011",
+      "name": "No Change Needed",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1750, 400],
+      "parameters": {}
+    },
+    {
+      "id": "a012",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2750, 200],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, mission_id: $('Set - Add Mission ID').item.json.internal_mission_id, status: 'PENDING_CONFIRMATION', reminders_scheduled: true }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - Mission Event": {
+      "main": [[{ "node": "Set - Normalize Mission Data", "type": "main", "index": 0 }]]
+    },
+    "Set - Normalize Mission Data": {
+      "main": [[{ "node": "PostgreSQL - Upsert Mission", "type": "main", "index": 0 }]]
+    },
+    "PostgreSQL - Upsert Mission": {
+      "main": [[{ "node": "Set - Add Mission ID", "type": "main", "index": 0 }]]
+    },
+    "Set - Add Mission ID": {
+      "main": [[{ "node": "PostgreSQL - Upsert Candidate", "type": "main", "index": 0 }]]
+    },
+    "PostgreSQL - Upsert Candidate": {
+      "main": [[{ "node": "IF - Already Confirmed", "type": "main", "index": 0 }]]
+    },
+    "IF - Already Confirmed": {
+      "main": [
+        [{ "node": "Code - Build Confirmation Message", "type": "main", "index": 0 }],
+        [{ "node": "No Change Needed", "type": "main", "index": 0 }]
+      ]
+    },
+    "Code - Build Confirmation Message": {
+      "main": [[{ "node": "HTTP - Send SMS Twilio", "type": "main", "index": 0 }]]
+    },
+    "HTTP - Send SMS Twilio": {
+      "main": [[{ "node": "Code - Compute Reminder Times", "type": "main", "index": 0 }]]
+    },
+    "Code - Compute Reminder Times": {
+      "main": [[{ "node": "PostgreSQL - Save Reminder Schedule", "type": "main", "index": 0 }]]
+    },
+    "PostgreSQL - Save Reminder Schedule": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "ERR_HANDLER"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "WF_A_MISSION_CREATED",
+  "tags": ["mission", "ats", "recrutement"]
+}
