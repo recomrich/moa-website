@@ -519,8 +519,9 @@
         "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({text:`✅ *Confirmation reçue* — ${$json.candidate_name} a CONFIRMÉ la mission du ${$json.mission_date} (${$json.location}). Ref: ${$json.ats_mission_id}`}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({text:`✅ *Confirmation reçue* — ${$json.candidate_name} a CONFIRMÉ la mission du ${$json.mission_date} (${$json.location}). Ref: ${$json.ats_mission_id}`}) }}"
       }
     },
     {
@@ -599,8 +600,9 @@
         "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({text:`❌ *Refus reçu* — ${$json.candidate_name} a DÉCLINÉ la mission du ${$json.mission_date} (${$json.location}). Backup en cours... Ref: ${$json.ats_mission_id}`}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({text:`❌ *Refus reçu* — ${$json.candidate_name} a DÉCLINÉ la mission du ${$json.mission_date} (${$json.location}). Backup en cours... Ref: ${$json.ats_mission_id}`}) }}"
       }
     },
     {
@@ -617,8 +619,9 @@
         "url": "http://localhost:5678/webhook/backup-finder",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({mission_id:$json.mission_id,ats_mission_id:$json.ats_mission_id,skill_required:$json.skill_required,location:$json.location,mission_date:$json.mission_date,recruiter_id:$json.recruiter_id,reason:'DECLINED'}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({mission_id:$json.mission_id,ats_mission_id:$json.ats_mission_id,skill_required:$json.skill_required,location:$json.location,mission_date:$json.mission_date,recruiter_id:$json.recruiter_id,reason:'DECLINED'}) }}"
       }
     },
     {
@@ -718,8 +721,9 @@
         "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({text:`🚫 *STOP reçu* — ${$json.candidate_name} s'est désinscrit. Profil marqué opt-out. Ref: ${$json.ats_mission_id}`}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({text:`🚫 *STOP reçu* — ${$json.candidate_name} s'est désinscrit. Profil marqué opt-out. Ref: ${$json.ats_mission_id}`}) }}"
       }
     },
     {
@@ -1109,8 +1113,9 @@
         "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({text:`🚨 *RISQUE ÉLEVÉ — NON RÉPONSE* — ${$json.candidate_name} n'a pas confirmé la mission du ${$json.mission_date} (${$json.location}). La mission commence dans moins de 2h. Backup en cours... Ref: ${$json.ats_mission_id}`}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({text:`🚨 *RISQUE ÉLEVÉ — NON RÉPONSE* — ${$json.candidate_name} n'a pas confirmé la mission du ${$json.mission_date} (${$json.location}). La mission commence dans moins de 2h. Backup en cours... Ref: ${$json.ats_mission_id}`}) }}"
       }
     },
     {
@@ -1127,8 +1132,9 @@
         "url": "http://localhost:5678/webhook/risk-scoring",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({mission_id:$json.mission_id,candidate_id:$json.candidate_id,trigger:'HIGH_RISK_NO_RESPONSE'}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({mission_id:$json.mission_id,candidate_id:$json.candidate_id,trigger:'HIGH_RISK_NO_RESPONSE'}) }}"
       }
     },
     {
@@ -1145,8 +1151,9 @@
         "url": "http://localhost:5678/webhook/backup-finder",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({mission_id:$json.mission_id,ats_mission_id:$json.ats_mission_id,skill_required:$json.skill_required,location:$json.location,mission_date:$json.mission_date,recruiter_id:$json.recruiter_id,reason:'HIGH_RISK_NO_RESPONSE'}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({mission_id:$json.mission_id,ats_mission_id:$json.ats_mission_id,skill_required:$json.skill_required,location:$json.location,mission_date:$json.mission_date,recruiter_id:$json.recruiter_id,reason:'HIGH_RISK_NO_RESPONSE'}) }}"
       }
     },
     {
@@ -1306,8 +1313,9 @@
         "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({text:$json.shortlist_text}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({text:$json.shortlist_text}) }}"
       }
     },
     {
@@ -1429,8 +1437,9 @@
         "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({text:`⚠️ *AUCUN BACKUP DISPONIBLE* — Aucun candidat qualifié pour la mission du ${$('D - Normalize Backup Request').first().json.mission_date} (${$('D - Normalize Backup Request').first().json.skill_required}). Action manuelle requise! Ref: ${$('D - Normalize Backup Request').first().json.ats_mission_id}`}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({text:`⚠️ *AUCUN BACKUP DISPONIBLE* — Aucun candidat qualifié pour la mission du ${$('D - Normalize Backup Request').first().json.mission_date} (${$('D - Normalize Backup Request').first().json.skill_required}). Action manuelle requise! Ref: ${$('D - Normalize Backup Request').first().json.ats_mission_id}`}) }}"
       }
     },
     {
@@ -1557,8 +1566,9 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({model:'gpt-4o-mini',response_format:{type:'json_object'},messages:[{role:'system',content:'Tu es expert RH. Retourne UNIQUEMENT ce JSON: {\\\"risk_score\\\":<0-100>,\\\"risk_level\\\":\\\"LOW\\\"|\\\"MEDIUM\\\"|\\\"HIGH\\\"|\\\"CRITICAL\\\",\\\"main_risk_factors\\\":[],\\\"recommended_actions\\\":[],\\\"confidence\\\":<0-100>}'},{role:'user',content:`Mission ${$json.ats_mission_id} (${$json.mission_date}, ${$json.location}) — Candidat: ${$json.name}\\nAbsence:${Math.round(($json.absence_rate||0)*100)}% | Retard:${Math.round(($json.late_rate||0)*100)}% | Non-réponses:${$json.no_reply_count||0} | Fiabilité:${$json.reliability_score||'?'}\\nScores normalisés — Réactivité:${$json.features.response_time_score} | Présence:${$json.features.absence_score} | Ponctualité:${$json.features.late_score} | Réponse:${$json.features.no_reply_score} | Clarté:${$json.features.clarity_score}\\nStatut actuel:${$json.current_status} | Déclencheur:${$json.features.trigger} | Rappels envoyés:${$json.features.reminders_needed}`}],temperature:0.2,max_tokens:300}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({model:'gpt-4o-mini',response_format:{type:'json_object'},messages:[{role:'system',content:'Tu es expert RH. Retourne UNIQUEMENT ce JSON: {\\\"risk_score\\\":<0-100>,\\\"risk_level\\\":\\\"LOW\\\"|\\\"MEDIUM\\\"|\\\"HIGH\\\"|\\\"CRITICAL\\\",\\\"main_risk_factors\\\":[],\\\"recommended_actions\\\":[],\\\"confidence\\\":<0-100>}'},{role:'user',content:`Mission ${$json.ats_mission_id} (${$json.mission_date}, ${$json.location}) — Candidat: ${$json.name}\\nAbsence:${Math.round(($json.absence_rate||0)*100)}% | Retard:${Math.round(($json.late_rate||0)*100)}% | Non-réponses:${$json.no_reply_count||0} | Fiabilité:${$json.reliability_score||'?'}\\nScores normalisés — Réactivité:${$json.features.response_time_score} | Présence:${$json.features.absence_score} | Ponctualité:${$json.features.late_score} | Réponse:${$json.features.no_reply_score} | Clarté:${$json.features.clarity_score}\\nStatut actuel:${$json.current_status} | Déclencheur:${$json.features.trigger} | Rappels envoyés:${$json.features.reminders_needed}`}],temperature:0.2,max_tokens:300}) }}"
       }
     },
     {
@@ -1641,8 +1651,9 @@
         "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({text:`🔴 *ALERTE RISQUE ${$json.risk_level}* — ${$json.name} | Score:${$json.risk_score}/100 | Mission:${$json.ats_mission_id} (${$json.mission_date})\\nFacteurs: ${($json.main_risk_factors||[]).join(', ')}\\nActions: ${($json.recommended_actions||[]).join(', ')}`}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({text:`🔴 *ALERTE RISQUE ${$json.risk_level}* — ${$json.name} | Score:${$json.risk_score}/100 | Mission:${$json.ats_mission_id} (${$json.mission_date})\\nFacteurs: ${($json.main_risk_factors||[]).join(', ')}\\nActions: ${($json.recommended_actions||[]).join(', ')}`}) }}"
       }
     },
     {
@@ -1659,8 +1670,9 @@
         "url": "http://localhost:5678/webhook/backup-finder",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({mission_id:$json.mission_id,ats_mission_id:$json.ats_mission_id,skill_required:$json.skill_required,location:$json.location,mission_date:$json.mission_date,recruiter_id:$json.recruiter_id,reason:'HIGH_RISK_AI_SCORING',risk_score:$json.risk_score}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({mission_id:$json.mission_id,ats_mission_id:$json.ats_mission_id,skill_required:$json.skill_required,location:$json.location,mission_date:$json.mission_date,recruiter_id:$json.recruiter_id,reason:'HIGH_RISK_AI_SCORING',risk_score:$json.risk_score}) }}"
       }
     },
     {
@@ -1677,8 +1689,9 @@
         "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({text:`🟢 *Score ${$json.risk_level}* — ${$json.name} | Score:${$json.risk_score}/100 | Mission:${$json.ats_mission_id}. Aucune action requise.`}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({text:`🟢 *Score ${$json.risk_level}* — ${$json.name} | Score:${$json.risk_score}/100 | Mission:${$json.ats_mission_id}. Aucune action requise.`}) }}"
       }
     },
     {
@@ -2050,8 +2063,9 @@
         "url": "http://localhost:5678/webhook/risk-scoring",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({mission_id:$('F - Normalize Outcome').first().json.mission_id,candidate_id:$json.candidate_id,trigger:'OUTCOME_UPDATE_'+$json.outcome}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({mission_id:$('F - Normalize Outcome').first().json.mission_id,candidate_id:$json.candidate_id,trigger:'OUTCOME_UPDATE_'+$json.outcome}) }}"
       }
     },
     {
@@ -2068,8 +2082,9 @@
         "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({text:[$json.outcome==='PRESENT'?'✅':$json.outcome==='ABSENT'?'❌':'⏰',`*Résultat mission* — ${$json.name} : ${$json.outcome} | Fiabilité: ${$json.new_reliability_score}/100 (Présences:${$json.new_present} | Absences:${$json.new_absent} | Retards:${$json.new_late} / ${$json.new_total})`].join(' ')}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({text:[$json.outcome==='PRESENT'?'✅':$json.outcome==='ABSENT'?'❌':'⏰',`*Résultat mission* — ${$json.name} : ${$json.outcome} | Fiabilité: ${$json.new_reliability_score}/100 (Présences:${$json.new_present} | Absences:${$json.new_absent} | Retards:${$json.new_late} / ${$json.new_total})`].join(' ')}) }}"
       }
     },
     {

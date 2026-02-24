@@ -6,7 +6,10 @@
       "name": "Webhook - Risk Scoring Request",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "parameters": {
         "path": "risk-scoring",
         "httpMethod": "POST",
@@ -19,15 +22,33 @@
       "name": "Set - Normalize Input",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
-      "position": [500, 300],
+      "position": [
+        500,
+        300
+      ],
       "parameters": {
         "mode": "manual",
         "duplicateItem": false,
         "assignments": {
           "assignments": [
-            { "id": "f01", "name": "mission_id", "value": "={{ $json.body.mission_id }}", "type": "string" },
-            { "id": "f02", "name": "candidate_id", "value": "={{ $json.body.candidate_id }}", "type": "string" },
-            { "id": "f03", "name": "trigger", "value": "={{ $json.body.trigger ?? 'MANUAL' }}", "type": "string" }
+            {
+              "id": "f01",
+              "name": "mission_id",
+              "value": "={{ $json.body.mission_id }}",
+              "type": "string"
+            },
+            {
+              "id": "f02",
+              "name": "candidate_id",
+              "value": "={{ $json.body.candidate_id }}",
+              "type": "string"
+            },
+            {
+              "id": "f03",
+              "name": "trigger",
+              "value": "={{ $json.body.trigger ?? 'MANUAL' }}",
+              "type": "string"
+            }
           ]
         },
         "options": {}
@@ -38,9 +59,15 @@
       "name": "PostgreSQL - Get Candidate History",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [750, 300],
+      "position": [
+        750,
+        300
+      ],
       "credentials": {
-        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
       },
       "parameters": {
         "operation": "executeQuery",
@@ -53,7 +80,10 @@
       "name": "Code - Compute Features",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1000, 300],
+      "position": [
+        1000,
+        300
+      ],
       "parameters": {
         "jsCode": "const d = $input.first().json;\nconst trigger = $('Set - Normalize Input').first().json.trigger;\n\n// Normalize features to 0-100 scale\nconst responseTimeScore = Math.max(0, Math.min(100,\n  d.avg_response_time_minutes != null\n    ? Math.max(0, 100 - (d.avg_response_time_minutes / 60) * 20)\n    : 50  // unknown -> neutral\n));\n\nconst absenceScore = Math.max(0, 100 - ((d.absence_rate || 0) * 100) * 2);\nconst lateScore = Math.max(0, 100 - ((d.late_rate || 0) * 100) * 1.5);\nconst noReplyScore = Math.max(0, 100 - (d.no_reply_count || 0) * 15);\nconst last30dScore = Math.min(100, (d.recent_mission_count || 0) * 10);\n\n// Message clarity: how many reminders were needed\nconst remindersNeeded = [d.reminder_1_sent_at, d.reminder_2_sent_at, d.reminder_3_sent_at].filter(Boolean).length;\nconst clarityScore = Math.max(0, 100 - remindersNeeded * 25);\n\nconst features = {\n  response_time_score: Math.round(responseTimeScore),\n  absence_score: Math.round(absenceScore),\n  late_score: Math.round(lateScore),\n  no_reply_score: Math.round(noReplyScore),\n  last30d_score: Math.round(last30dScore),\n  clarity_score: Math.round(clarityScore),\n  reminders_needed: remindersNeeded,\n  current_status: d.current_status,\n  trigger\n};\n\nreturn [{ json: { ...d, features } }];"
       }
@@ -63,9 +93,15 @@
       "name": "HTTP - OpenAI Risk Analysis",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1250, 300],
+      "position": [
+        1250,
+        300
+      ],
       "credentials": {
-        "httpHeaderAuth": { "id": "openai-creds", "name": "OpenAI API Key" }
+        "httpHeaderAuth": {
+          "id": "openai-creds",
+          "name": "OpenAI API Key"
+        }
       },
       "parameters": {
         "method": "POST",
@@ -74,8 +110,9 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({\n  model: 'gpt-4o-mini',\n  response_format: { type: 'json_object' },\n  messages: [\n    {\n      role: 'system',\n      content: `Tu es un expert en gestion des risques RH pour une agence de recrutement intérimaire.\nAnalyse les métriques d'un candidat et retourne un score de risque de 0 (aucun risque) à 100 (risque maximum d'absence/problème).\nRéponds UNIQUEMENT en JSON avec ce format exact:\n{\n  \"risk_score\": <number 0-100>,\n  \"risk_level\": \"LOW\" | \"MEDIUM\" | \"HIGH\" | \"CRITICAL\",\n  \"main_risk_factors\": [\"facteur1\", \"facteur2\"],\n  \"recommended_actions\": [\"action1\", \"action2\"],\n  \"confidence\": <number 0-100>\n}`\n    },\n    {\n      role: 'user',\n      content: `Analyse ce profil candidat pour la mission ${$json.ats_mission_id} (${$json.mission_date}, ${$json.location}):\n\nMétriques candidat: ${$json.name}\n- Taux d'absence: ${Math.round(($json.absence_rate || 0) * 100)}%\n- Taux de retard: ${Math.round(($json.late_rate || 0) * 100)}%\n- Non-réponses historiques: ${$json.no_reply_count || 0}\n- Missions 30 derniers jours: ${$json.recent_mission_count || 0}\n- Score fiabilité actuel: ${$json.reliability_score || 'Non calculé'}\n- Temps de réponse moyen: ${$json.avg_response_time_minutes ? $json.avg_response_time_minutes + ' minutes' : 'Inconnu'}\n\nScores normalisés (0-100, 100=excellent):\n- Réactivité: ${$json.features.response_time_score}/100\n- Présence: ${$json.features.absence_score}/100\n- Ponctualité: ${$json.features.late_score}/100\n- Taux de réponse: ${$json.features.no_reply_score}/100\n- Activité récente: ${$json.features.last30d_score}/100\n- Clarté engagement: ${$json.features.clarity_score}/100\n\nSituation actuelle: Statut = ${$json.current_status}, Déclencheur = ${$json.features.trigger}, Rappels envoyés: ${$json.features.reminders_needed}`\n    }\n  ],\n  temperature: 0.2,\n  max_tokens: 400\n}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({\n  model: 'gpt-4o-mini',\n  response_format: { type: 'json_object' },\n  messages: [\n    {\n      role: 'system',\n      content: `Tu es un expert en gestion des risques RH pour une agence de recrutement intérimaire.\nAnalyse les métriques d'un candidat et retourne un score de risque de 0 (aucun risque) à 100 (risque maximum d'absence/problème).\nRéponds UNIQUEMENT en JSON avec ce format exact:\n{\n  \"risk_score\": <number 0-100>,\n  \"risk_level\": \"LOW\" | \"MEDIUM\" | \"HIGH\" | \"CRITICAL\",\n  \"main_risk_factors\": [\"facteur1\", \"facteur2\"],\n  \"recommended_actions\": [\"action1\", \"action2\"],\n  \"confidence\": <number 0-100>\n}`\n    },\n    {\n      role: 'user',\n      content: `Analyse ce profil candidat pour la mission ${$json.ats_mission_id} (${$json.mission_date}, ${$json.location}):\n\nMétriques candidat: ${$json.name}\n- Taux d'absence: ${Math.round(($json.absence_rate || 0) * 100)}%\n- Taux de retard: ${Math.round(($json.late_rate || 0) * 100)}%\n- Non-réponses historiques: ${$json.no_reply_count || 0}\n- Missions 30 derniers jours: ${$json.recent_mission_count || 0}\n- Score fiabilité actuel: ${$json.reliability_score || 'Non calculé'}\n- Temps de réponse moyen: ${$json.avg_response_time_minutes ? $json.avg_response_time_minutes + ' minutes' : 'Inconnu'}\n\nScores normalisés (0-100, 100=excellent):\n- Réactivité: ${$json.features.response_time_score}/100\n- Présence: ${$json.features.absence_score}/100\n- Ponctualité: ${$json.features.late_score}/100\n- Taux de réponse: ${$json.features.no_reply_score}/100\n- Activité récente: ${$json.features.last30d_score}/100\n- Clarté engagement: ${$json.features.clarity_score}/100\n\nSituation actuelle: Statut = ${$json.current_status}, Déclencheur = ${$json.features.trigger}, Rappels envoyés: ${$json.features.reminders_needed}`\n    }\n  ],\n  temperature: 0.2,\n  max_tokens: 400\n}) }}"
       }
     },
     {
@@ -83,7 +120,10 @@
       "name": "Code - Parse AI Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1500, 300],
+      "position": [
+        1500,
+        300
+      ],
       "parameters": {
         "jsCode": "const aiResponse = $input.first().json;\nconst originalData = $('Code - Compute Features').first().json;\n\nlet parsed;\ntry {\n  const content = aiResponse.choices?.[0]?.message?.content || '{}';\n  parsed = JSON.parse(content);\n} catch (e) {\n  parsed = { risk_score: 75, risk_level: 'HIGH', main_risk_factors: ['Parse error'], recommended_actions: ['Manual review'], confidence: 0 };\n}\n\nreturn [{\n  json: {\n    ...originalData,\n    risk_score: parsed.risk_score || 0,\n    risk_level: parsed.risk_level || 'MEDIUM',\n    main_risk_factors: parsed.main_risk_factors || [],\n    recommended_actions: parsed.recommended_actions || [],\n    ai_confidence: parsed.confidence || 0,\n    is_high_risk: (parsed.risk_score || 0) >= 70\n  }\n}];"
       }
@@ -93,9 +133,15 @@
       "name": "PostgreSQL - Update Risk Score",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [1750, 300],
+      "position": [
+        1750,
+        300
+      ],
       "credentials": {
-        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
       },
       "parameters": {
         "operation": "executeQuery",
@@ -108,16 +154,26 @@
       "name": "IF - High Risk",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [2000, 300],
+      "position": [
+        2000,
+        300
+      ],
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
           "conditions": [
             {
               "id": "c01",
               "leftValue": "={{ $json.is_high_risk }}",
               "rightValue": true,
-              "operator": { "type": "boolean", "operation": "true" }
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
             }
           ],
           "combinator": "and"
@@ -130,14 +186,18 @@
       "name": "HTTP - Notify Recruiter Risk Report",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2250, 200],
+      "position": [
+        2250,
+        200
+      ],
       "parameters": {
         "method": "POST",
         "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({\n  text: `🔴 *ALERTE RISQUE ${$json.risk_level}* — ${$json.name} | Score: ${$json.risk_score}/100 | Mission: ${$json.ats_mission_id} (${$json.mission_date})\\n*Facteurs:* ${($json.main_risk_factors || []).join(', ')}\\n*Actions recommandées:* ${($json.recommended_actions || []).join(', ')}`\n}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({\n  text: `🔴 *ALERTE RISQUE ${$json.risk_level}* — ${$json.name} | Score: ${$json.risk_score}/100 | Mission: ${$json.ats_mission_id} (${$json.mission_date})\\n*Facteurs:* ${($json.main_risk_factors || []).join(', ')}\\n*Actions recommandées:* ${($json.recommended_actions || []).join(', ')}`\n}) }}"
       }
     },
     {
@@ -145,14 +205,18 @@
       "name": "HTTP - Trigger Backup Workflow D",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2500, 200],
+      "position": [
+        2500,
+        200
+      ],
       "parameters": {
         "method": "POST",
         "url": "http://localhost:5678/webhook/backup-finder",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({ mission_id: $json.mission_id, ats_mission_id: $json.ats_mission_id, skill_required: $json.skill_required, location: $json.location, mission_date: $json.mission_date, recruiter_id: $json.recruiter_id, reason: 'HIGH_RISK_AI_SCORING', risk_score: $json.risk_score }) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({ mission_id: $json.mission_id, ats_mission_id: $json.ats_mission_id, skill_required: $json.skill_required, location: $json.location, mission_date: $json.mission_date, recruiter_id: $json.recruiter_id, reason: 'HIGH_RISK_AI_SCORING', risk_score: $json.risk_score }) }}"
       }
     },
     {
@@ -160,14 +224,18 @@
       "name": "HTTP - Notify Low Risk",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2250, 400],
+      "position": [
+        2250,
+        400
+      ],
       "parameters": {
         "method": "POST",
         "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({\n  text: `🟢 *Score Risque ${$json.risk_level}* — ${$json.name} | Score: ${$json.risk_score}/100 | Mission: ${$json.ats_mission_id} (${$json.mission_date}). Aucune action requise.`\n}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({\n  text: `🟢 *Score Risque ${$json.risk_level}* — ${$json.name} | Score: ${$json.risk_score}/100 | Mission: ${$json.ats_mission_id} (${$json.mission_date}). Aucune action requise.`\n}) }}"
       }
     },
     {
@@ -175,7 +243,10 @@
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [2750, 300],
+      "position": [
+        2750,
+        300
+      ],
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ JSON.stringify({ success: true, risk_score: $json.risk_score, risk_level: $json.risk_level, is_high_risk: $json.is_high_risk }) }}",
@@ -185,40 +256,132 @@
   ],
   "connections": {
     "Webhook - Risk Scoring Request": {
-      "main": [[{ "node": "Set - Normalize Input", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Set - Normalize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Set - Normalize Input": {
-      "main": [[{ "node": "PostgreSQL - Get Candidate History", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "PostgreSQL - Get Candidate History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "PostgreSQL - Get Candidate History": {
-      "main": [[{ "node": "Code - Compute Features", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Code - Compute Features",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Code - Compute Features": {
-      "main": [[{ "node": "HTTP - OpenAI Risk Analysis", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "HTTP - OpenAI Risk Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "HTTP - OpenAI Risk Analysis": {
-      "main": [[{ "node": "Code - Parse AI Response", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Code - Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Code - Parse AI Response": {
-      "main": [[{ "node": "PostgreSQL - Update Risk Score", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "PostgreSQL - Update Risk Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "PostgreSQL - Update Risk Score": {
-      "main": [[{ "node": "IF - High Risk", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "IF - High Risk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "IF - High Risk": {
       "main": [
-        [{ "node": "HTTP - Notify Recruiter Risk Report", "type": "main", "index": 0 }],
-        [{ "node": "HTTP - Notify Low Risk", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "HTTP - Notify Recruiter Risk Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP - Notify Low Risk",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "HTTP - Notify Recruiter Risk Report": {
-      "main": [[{ "node": "HTTP - Trigger Backup Workflow D", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "HTTP - Trigger Backup Workflow D",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "HTTP - Trigger Backup Workflow D": {
-      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "HTTP - Notify Low Risk": {
-      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -230,5 +393,11 @@
     "templateCredsSetupCompleted": false
   },
   "id": "WF_E_RISK_SCORING",
-  "tags": ["risk", "ai", "openai", "scoring", "mission"]
+  "tags": [
+    "risk",
+    "ai",
+    "openai",
+    "scoring",
+    "mission"
+  ]
 }

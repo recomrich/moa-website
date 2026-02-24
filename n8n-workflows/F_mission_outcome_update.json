@@ -6,7 +6,10 @@
       "name": "Webhook - Outcome Update",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "parameters": {
         "path": "mission-outcome",
         "httpMethod": "POST",
@@ -19,18 +22,51 @@
       "name": "Set - Normalize Outcome",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
-      "position": [500, 300],
+      "position": [
+        500,
+        300
+      ],
       "parameters": {
         "mode": "manual",
         "duplicateItem": false,
         "assignments": {
           "assignments": [
-            { "id": "x01", "name": "mission_id", "value": "={{ $json.body.mission_id }}", "type": "string" },
-            { "id": "x02", "name": "ats_mission_id", "value": "={{ $json.body.ats_mission_id }}", "type": "string" },
-            { "id": "x03", "name": "outcome", "value": "={{ ($json.body.outcome || '').toUpperCase() }}", "type": "string" },
-            { "id": "x04", "name": "recruiter_id", "value": "={{ $json.body.recruiter_id }}", "type": "string" },
-            { "id": "x05", "name": "notes", "value": "={{ $json.body.notes ?? '' }}", "type": "string" },
-            { "id": "x06", "name": "arrival_time", "value": "={{ $json.body.arrival_time ?? null }}", "type": "string" }
+            {
+              "id": "x01",
+              "name": "mission_id",
+              "value": "={{ $json.body.mission_id }}",
+              "type": "string"
+            },
+            {
+              "id": "x02",
+              "name": "ats_mission_id",
+              "value": "={{ $json.body.ats_mission_id }}",
+              "type": "string"
+            },
+            {
+              "id": "x03",
+              "name": "outcome",
+              "value": "={{ ($json.body.outcome || '').toUpperCase() }}",
+              "type": "string"
+            },
+            {
+              "id": "x04",
+              "name": "recruiter_id",
+              "value": "={{ $json.body.recruiter_id }}",
+              "type": "string"
+            },
+            {
+              "id": "x05",
+              "name": "notes",
+              "value": "={{ $json.body.notes ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "x06",
+              "name": "arrival_time",
+              "value": "={{ $json.body.arrival_time ?? null }}",
+              "type": "string"
+            }
           ]
         },
         "options": {}
@@ -41,7 +77,10 @@
       "name": "Switch - Outcome Type",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
-      "position": [750, 300],
+      "position": [
+        750,
+        300
+      ],
       "parameters": {
         "mode": "rules",
         "options": {},
@@ -49,7 +88,16 @@
           "rules": [
             {
               "conditions": {
-                "conditions": [{ "leftValue": "={{ $json.outcome }}", "rightValue": "PRESENT", "operator": { "type": "string", "operation": "equals" } }],
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.outcome }}",
+                    "rightValue": "PRESENT",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
                 "combinator": "and"
               },
               "renameOutput": true,
@@ -57,7 +105,16 @@
             },
             {
               "conditions": {
-                "conditions": [{ "leftValue": "={{ $json.outcome }}", "rightValue": "ABSENT", "operator": { "type": "string", "operation": "equals" } }],
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.outcome }}",
+                    "rightValue": "ABSENT",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
                 "combinator": "and"
               },
               "renameOutput": true,
@@ -65,7 +122,16 @@
             },
             {
               "conditions": {
-                "conditions": [{ "leftValue": "={{ $json.outcome }}", "rightValue": "LATE", "operator": { "type": "string", "operation": "equals" } }],
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.outcome }}",
+                    "rightValue": "LATE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
                 "combinator": "and"
               },
               "renameOutput": true,
@@ -80,9 +146,15 @@
       "name": "PG - Update COMPLETED_PRESENT",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [1000, 150],
+      "position": [
+        1000,
+        150
+      ],
       "credentials": {
-        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
       },
       "parameters": {
         "operation": "executeQuery",
@@ -95,9 +167,15 @@
       "name": "PG - Update COMPLETED_ABSENT",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [1000, 300],
+      "position": [
+        1000,
+        300
+      ],
       "credentials": {
-        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
       },
       "parameters": {
         "operation": "executeQuery",
@@ -110,9 +188,15 @@
       "name": "PG - Update COMPLETED_LATE",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [1000, 450],
+      "position": [
+        1000,
+        450
+      ],
       "credentials": {
-        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
       },
       "parameters": {
         "operation": "executeQuery",
@@ -125,9 +209,15 @@
       "name": "PostgreSQL - Get Candidate for PRESENT",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [1250, 150],
+      "position": [
+        1250,
+        150
+      ],
       "credentials": {
-        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
       },
       "parameters": {
         "operation": "executeQuery",
@@ -140,9 +230,15 @@
       "name": "PostgreSQL - Get Candidate for ABSENT",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [1250, 300],
+      "position": [
+        1250,
+        300
+      ],
       "credentials": {
-        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
       },
       "parameters": {
         "operation": "executeQuery",
@@ -155,9 +251,15 @@
       "name": "PostgreSQL - Get Candidate for LATE",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [1250, 450],
+      "position": [
+        1250,
+        450
+      ],
       "credentials": {
-        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
       },
       "parameters": {
         "operation": "executeQuery",
@@ -170,7 +272,10 @@
       "name": "Code - Recompute Metrics PRESENT",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1500, 150],
+      "position": [
+        1500,
+        150
+      ],
       "parameters": {
         "jsCode": "const c = $input.first().json;\nconst newTotal = (c.total_missions_count || 0) + 1;\nconst newPresent = (c.present_count || 0) + 1;\nconst newAbsent = c.absent_count || 0;\nconst newLate = c.late_count || 0;\n\nconst absenceRate = newTotal > 0 ? newAbsent / newTotal : 0;\nconst lateRate = newTotal > 0 ? newLate / newTotal : 0;\nconst reliabilityScore = Math.round(\n  Math.max(0, Math.min(100,\n    100 - (absenceRate * 100 * 2) - (lateRate * 100 * 1) - ((c.no_reply_count || 0) * 3)\n  ))\n);\n\nreturn [{ json: {\n  ...c,\n  outcome: 'PRESENT',\n  new_total: newTotal,\n  new_present: newPresent,\n  new_absent: newAbsent,\n  new_late: newLate,\n  new_absence_rate: absenceRate,\n  new_late_rate: lateRate,\n  new_reliability_score: reliabilityScore\n}}];"
       }
@@ -180,7 +285,10 @@
       "name": "Code - Recompute Metrics ABSENT",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1500, 300],
+      "position": [
+        1500,
+        300
+      ],
       "parameters": {
         "jsCode": "const c = $input.first().json;\nconst newTotal = (c.total_missions_count || 0) + 1;\nconst newPresent = c.present_count || 0;\nconst newAbsent = (c.absent_count || 0) + 1;\nconst newLate = c.late_count || 0;\n\nconst absenceRate = newTotal > 0 ? newAbsent / newTotal : 0;\nconst lateRate = newTotal > 0 ? newLate / newTotal : 0;\nconst reliabilityScore = Math.round(\n  Math.max(0, Math.min(100,\n    100 - (absenceRate * 100 * 2) - (lateRate * 100 * 1) - ((c.no_reply_count || 0) * 3)\n  ))\n);\n\nreturn [{ json: {\n  ...c,\n  outcome: 'ABSENT',\n  new_total: newTotal,\n  new_present: newPresent,\n  new_absent: newAbsent,\n  new_late: newLate,\n  new_absence_rate: absenceRate,\n  new_late_rate: lateRate,\n  new_reliability_score: reliabilityScore\n}}];"
       }
@@ -190,7 +298,10 @@
       "name": "Code - Recompute Metrics LATE",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1500, 450],
+      "position": [
+        1500,
+        450
+      ],
       "parameters": {
         "jsCode": "const c = $input.first().json;\nconst newTotal = (c.total_missions_count || 0) + 1;\nconst newPresent = c.present_count || 0;\nconst newAbsent = c.absent_count || 0;\nconst newLate = (c.late_count || 0) + 1;\n\nconst absenceRate = newTotal > 0 ? newAbsent / newTotal : 0;\nconst lateRate = newTotal > 0 ? newLate / newTotal : 0;\nconst reliabilityScore = Math.round(\n  Math.max(0, Math.min(100,\n    100 - (absenceRate * 100 * 2) - (lateRate * 100 * 1) - ((c.no_reply_count || 0) * 3)\n  ))\n);\n\nreturn [{ json: {\n  ...c,\n  outcome: 'LATE',\n  new_total: newTotal,\n  new_present: newPresent,\n  new_absent: newAbsent,\n  new_late: newLate,\n  new_absence_rate: absenceRate,\n  new_late_rate: lateRate,\n  new_reliability_score: reliabilityScore\n}}];"
       }
@@ -200,7 +311,10 @@
       "name": "Merge - All Outcomes",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
-      "position": [1750, 300],
+      "position": [
+        1750,
+        300
+      ],
       "parameters": {
         "mode": "passThrough",
         "output": "input1"
@@ -211,9 +325,15 @@
       "name": "PostgreSQL - Update Candidate Metrics",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [2000, 300],
+      "position": [
+        2000,
+        300
+      ],
       "credentials": {
-        "postgres": { "id": "pg-creds", "name": "PostgreSQL ATS DB" }
+        "postgres": {
+          "id": "pg-creds",
+          "name": "PostgreSQL ATS DB"
+        }
       },
       "parameters": {
         "operation": "executeQuery",
@@ -226,14 +346,18 @@
       "name": "HTTP - Trigger Re-Score Risk Workflow E",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2250, 300],
+      "position": [
+        2250,
+        300
+      ],
       "parameters": {
         "method": "POST",
         "url": "http://localhost:5678/webhook/risk-scoring",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({ mission_id: $json.mission_id ?? $('Set - Normalize Outcome').first().json.mission_id, candidate_id: $json.candidate_id, trigger: 'OUTCOME_UPDATE_' + $json.outcome }) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({ mission_id: $json.mission_id ?? $('Set - Normalize Outcome').first().json.mission_id, candidate_id: $json.candidate_id, trigger: 'OUTCOME_UPDATE_' + $json.outcome }) }}"
       }
     },
     {
@@ -241,14 +365,18 @@
       "name": "HTTP - Notify Recruiter Outcome",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2500, 300],
+      "position": [
+        2500,
+        300
+      ],
       "parameters": {
         "method": "POST",
         "url": "https://hooks.slack.com/services/SLACK_WEBHOOK_URL",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({\n  text: [\n    $json.outcome === 'PRESENT' ? '✅' : $json.outcome === 'ABSENT' ? '❌' : '⏰',\n    `*Résultat mission* — ${$json.name} : ${$json.outcome} | Fiabilité mise à jour: ${$json.new_reliability_score}/100`,\n    `(Présences: ${$json.new_present} | Absences: ${$json.new_absent} | Retards: ${$json.new_late} sur ${$json.new_total} missions)`\n  ].join(' ')\n}) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "string",
+        "jsonBody": "={{ JSON.stringify({\n  text: [\n    $json.outcome === 'PRESENT' ? '✅' : $json.outcome === 'ABSENT' ? '❌' : '⏰',\n    `*Résultat mission* — ${$json.name} : ${$json.outcome} | Fiabilité mise à jour: ${$json.new_reliability_score}/100`,\n    `(Présences: ${$json.new_present} | Absences: ${$json.new_absent} | Retards: ${$json.new_late} sur ${$json.new_total} missions)`\n  ].join(' ')\n}) }}"
       }
     },
     {
@@ -256,7 +384,10 @@
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [2750, 300],
+      "position": [
+        2750,
+        300
+      ],
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ JSON.stringify({ success: true, outcome: $json.outcome, new_reliability_score: $json.new_reliability_score }) }}",
@@ -266,56 +397,194 @@
   ],
   "connections": {
     "Webhook - Outcome Update": {
-      "main": [[{ "node": "Set - Normalize Outcome", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Set - Normalize Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Set - Normalize Outcome": {
-      "main": [[{ "node": "Switch - Outcome Type", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Switch - Outcome Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Switch - Outcome Type": {
       "main": [
-        [{ "node": "PG - Update COMPLETED_PRESENT", "type": "main", "index": 0 }],
-        [{ "node": "PG - Update COMPLETED_ABSENT", "type": "main", "index": 0 }],
-        [{ "node": "PG - Update COMPLETED_LATE", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "PG - Update COMPLETED_PRESENT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "PG - Update COMPLETED_ABSENT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "PG - Update COMPLETED_LATE",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "PG - Update COMPLETED_PRESENT": {
-      "main": [[{ "node": "PostgreSQL - Get Candidate for PRESENT", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "PostgreSQL - Get Candidate for PRESENT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "PG - Update COMPLETED_ABSENT": {
-      "main": [[{ "node": "PostgreSQL - Get Candidate for ABSENT", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "PostgreSQL - Get Candidate for ABSENT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "PG - Update COMPLETED_LATE": {
-      "main": [[{ "node": "PostgreSQL - Get Candidate for LATE", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "PostgreSQL - Get Candidate for LATE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "PostgreSQL - Get Candidate for PRESENT": {
-      "main": [[{ "node": "Code - Recompute Metrics PRESENT", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Code - Recompute Metrics PRESENT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "PostgreSQL - Get Candidate for ABSENT": {
-      "main": [[{ "node": "Code - Recompute Metrics ABSENT", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Code - Recompute Metrics ABSENT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "PostgreSQL - Get Candidate for LATE": {
-      "main": [[{ "node": "Code - Recompute Metrics LATE", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Code - Recompute Metrics LATE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Code - Recompute Metrics PRESENT": {
-      "main": [[{ "node": "Merge - All Outcomes", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Merge - All Outcomes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Code - Recompute Metrics ABSENT": {
-      "main": [[{ "node": "Merge - All Outcomes", "type": "main", "index": 1 }]]
+      "main": [
+        [
+          {
+            "node": "Merge - All Outcomes",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
     },
     "Code - Recompute Metrics LATE": {
-      "main": [[{ "node": "Merge - All Outcomes", "type": "main", "index": 2 }]]
+      "main": [
+        [
+          {
+            "node": "Merge - All Outcomes",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
     },
     "Merge - All Outcomes": {
-      "main": [[{ "node": "PostgreSQL - Update Candidate Metrics", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "PostgreSQL - Update Candidate Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "PostgreSQL - Update Candidate Metrics": {
-      "main": [[{ "node": "HTTP - Trigger Re-Score Risk Workflow E", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "HTTP - Trigger Re-Score Risk Workflow E",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "HTTP - Trigger Re-Score Risk Workflow E": {
-      "main": [[{ "node": "HTTP - Notify Recruiter Outcome", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "HTTP - Notify Recruiter Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "HTTP - Notify Recruiter Outcome": {
-      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -327,5 +596,10 @@
     "templateCredsSetupCompleted": false
   },
   "id": "WF_F_OUTCOME_UPDATE",
-  "tags": ["outcome", "mission", "fiabilite", "metrics"]
+  "tags": [
+    "outcome",
+    "mission",
+    "fiabilite",
+    "metrics"
+  ]
 }
