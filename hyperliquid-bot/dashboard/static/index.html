@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HyperBot — Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div class="connection-banner" id="connectionBanner">
+  ⚠️ Connexion WebSocket perdue — Tentative de reconnexion...
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ HEADER -->
+<header class="header">
+  <div class="header__logo">
+    <div class="header__logo-icon">⚡</div>
+    HYPERBOT
+  </div>
+
+  <div class="header__stats">
+    <div class="header__stat">
+      <span class="header__stat-label">Portefeuille</span>
+      <span class="header__stat-value" id="headerEquity">— $</span>
+    </div>
+    <div class="header__stat">
+      <span class="header__stat-label">PnL Jour</span>
+      <span class="header__stat-value" id="headerDailyPnl">—</span>
+    </div>
+    <div class="header__stat">
+      <span class="header__stat-label">Positions</span>
+      <span class="header__stat-value" id="headerPositions">0</span>
+    </div>
+  </div>
+
+  <div class="header__status">
+    <span id="modeBadge" class="mode-badge mode-badge--paper">PAPER</span>
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText" style="font-size:12px; color:var(--text-muted)">Déconnecté</span>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════════ MAIN -->
+<div class="main container">
+
+  <!-- ── Métriques principales ── -->
+  <div class="metrics-row">
+    <div class="metric">
+      <div class="metric__label">Équity Totale</div>
+      <div class="metric__value" id="metricEquity">$0.00</div>
+      <div class="metric__sub" id="metricTotalPnl">—</div>
+    </div>
+    <div class="metric">
+      <div class="metric__label">PnL Aujourd'hui</div>
+      <div class="metric__value" id="metricDailyPnl">$0.00</div>
+      <div class="metric__sub" id="metricDailyPct">0.00%</div>
+    </div>
+    <div class="metric">
+      <div class="metric__label">Drawdown</div>
+      <div class="metric__value" id="metricDrawdown">0.00%</div>
+      <div class="metric__sub" id="metricDrawdownMax" style="color:var(--text-muted)">Max: —%</div>
+    </div>
+    <div class="metric">
+      <div class="metric__label">Win Rate</div>
+      <div class="metric__value" id="metricWinRate">—%</div>
+      <div class="metric__sub" id="metricTrades" style="color:var(--text-muted)">0 trades</div>
+    </div>
+  </div>
+
+  <!-- ── Graphique d'équity ── -->
+  <div class="card">
+    <div class="card__title">📈 Courbe d'Équity</div>
+    <div class="chart-wrapper">
+      <canvas id="equityChart"></canvas>
+    </div>
+  </div>
+
+  <!-- ── Risque ── -->
+  <div class="card">
+    <div class="card__title">🛡️ Gestion du Risque</div>
+    <div class="risk-meter" id="riskMeter">
+      <div class="risk-row">
+        <span class="risk-row__label">Capital initial</span>
+        <span class="risk-row__value" id="riskInitialCapital">—</span>
+      </div>
+      <div class="risk-row">
+        <span class="risk-row__label">Drawdown actuel</span>
+        <span class="risk-row__value" id="riskDrawdown">0.00%</span>
+      </div>
+      <div class="risk-row">
+        <span class="risk-row__label">Drawdown maximum</span>
+        <span class="risk-row__value" id="riskMaxDrawdown">—%</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-bar__fill" id="drawdownBar" style="width:0%"></div>
+      </div>
+      <div class="risk-row" style="margin-top:8px">
+        <span class="risk-row__label">Positions ouvertes</span>
+        <span class="risk-row__value" id="riskPositions">0 / —</span>
+      </div>
+      <div class="risk-row">
+        <span class="risk-row__label">Risque max / trade</span>
+        <span class="risk-row__value" id="riskPerTrade">—%</span>
+      </div>
+      <div class="risk-row">
+        <span class="risk-row__label">Statut du bot</span>
+        <span class="risk-row__value" id="riskBotStatus">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Positions ouvertes ── -->
+  <div class="card main--full">
+    <div class="card__title">📊 Positions Ouvertes <span id="positionsCount" style="margin-left:auto; color:var(--text-muted)">0</span></div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Paire</th>
+            <th>Côté</th>
+            <th>Taille</th>
+            <th>Entrée</th>
+            <th>Prix actuel</th>
+            <th>PnL $</th>
+            <th>PnL %</th>
+            <th>Stop-Loss</th>
+            <th>Take-Profit</th>
+            <th>Levier</th>
+            <th>Stratégie</th>
+          </tr>
+        </thead>
+        <tbody id="positionsTable">
+          <tr><td colspan="11" class="empty-state">Aucune position ouverte</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Historique des trades ── -->
+  <div class="card main--full">
+    <div class="card__title">📋 Historique des Trades</div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Paire</th>
+            <th>Côté</th>
+            <th>Entrée</th>
+            <th>Sortie</th>
+            <th>Taille</th>
+            <th>PnL $</th>
+            <th>PnL %</th>
+            <th>Raison</th>
+            <th>Stratégie</th>
+            <th>Durée</th>
+            <th>Fermé le</th>
+          </tr>
+        </thead>
+        <tbody id="tradesTable">
+          <tr><td colspan="11" class="empty-state">Aucun trade</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Stratégies ── -->
+  <div class="card main--full">
+    <div class="card__title">🤖 Stratégies Actives</div>
+    <div class="strategies-grid" id="strategiesGrid">
+      <div class="empty-state">Chargement des stratégies…</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
