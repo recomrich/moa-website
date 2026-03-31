@@ -1,0 +1,57 @@
+bot:
+  mode: "paper"  # "paper" (simulation) or "live" (real trading)
+  update_interval: 60  # seconds between each analysis cycle
+
+risk:
+  max_risk_per_trade_pct: 1.0
+  max_drawdown_pct: 10.0
+  max_open_positions: 5
+  min_reward_risk_ratio: 2.0
+
+trading_pairs:
+  spot:
+    - symbol: "BTC"
+      strategies: ["trend_following", "breakout"]
+    - symbol: "ETH"
+      strategies: ["mean_reversion"]
+  perps:
+    - symbol: "BTC"
+      leverage: 5
+      strategies: ["trend_following", "scalping"]
+    - symbol: "SOL"
+      leverage: 3
+      strategies: ["breakout", "mean_reversion"]
+
+strategies:
+  trend_following:
+    enabled: true
+    timeframe: "1h"
+    ema_periods: [20, 50, 200]
+  mean_reversion:
+    enabled: true
+    timeframe: "15m"
+    rsi_oversold: 30
+    rsi_overbought: 70
+    bb_period: 20
+    bb_std: 2.0
+  breakout:
+    enabled: true
+    timeframe: "1h"
+    volume_multiplier: 1.5
+    lookback_period: 20
+  scalping:
+    enabled: false
+    timeframe: "5m"
+    ema_fast: 5
+    ema_slow: 13
+    tp_pct: 0.5
+    sl_pct: 0.3
+
+dashboard:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8080
+
+notifications:
+  telegram:
+    enabled: false

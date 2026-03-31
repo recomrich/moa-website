@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hyperliquid Trading Bot</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+
+<!-- Header -->
+<header class="header">
+    <h1>&#x1F916; Hyperliquid Trading Bot</h1>
+    <div class="header-stats">
+        <div class="stat-item">
+            <div class="stat-label">Portfolio Value</div>
+            <div class="stat-value" id="portfolio-value">$0.00</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Daily PnL</div>
+            <div class="stat-value" id="daily-pnl">$0.00</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Daily PnL %</div>
+            <div class="stat-value" id="daily-pnl-pct">0.00%</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Open Positions</div>
+            <div class="stat-value" id="open-positions">0</div>
+        </div>
+        <div class="stat-item">
+            <span class="status-badge active" id="bot-status">
+                <span class="status-dot"></span>
+                <span id="bot-status-text">Connecting...</span>
+            </span>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<main class="main">
+    <!-- Charts -->
+    <div class="chart-section">
+        <div class="card">
+            <div class="card-title">Equity Curve</div>
+            <div class="chart-container" id="equity-chart"></div>
+        </div>
+        <div class="card">
+            <div class="card-title">Price Chart</div>
+            <div class="chart-container" id="price-chart"></div>
+        </div>
+    </div>
+
+    <!-- Open Positions -->
+    <div class="card">
+        <div class="card-title">Open Positions</div>
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Side</th>
+                        <th>Size</th>
+                        <th>Entry</th>
+                        <th>PnL</th>
+                        <th>PnL %</th>
+                        <th>Leverage</th>
+                        <th>SL / TP</th>
+                        <th>Strategy</th>
+                    </tr>
+                </thead>
+                <tbody id="positions-table">
+                    <tr><td colspan="9" style="text-align:center;opacity:0.5;">No open positions</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Recent Trades -->
+    <div class="card">
+        <div class="card-title">Recent Trades</div>
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Side</th>
+                        <th>Entry</th>
+                        <th>Exit</th>
+                        <th>PnL</th>
+                        <th>PnL %</th>
+                        <th>Strategy</th>
+                        <th>Reason</th>
+                    </tr>
+                </thead>
+                <tbody id="trades-table">
+                    <tr><td colspan="8" style="text-align:center;opacity:0.5;">No trades yet</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Strategies -->
+    <div class="card" style="grid-column: 1 / -1;">
+        <div class="card-title">Strategies</div>
+        <div class="strategy-grid" id="strategies-grid">
+            <div style="opacity:0.5;">Loading strategies...</div>
+        </div>
+    </div>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
