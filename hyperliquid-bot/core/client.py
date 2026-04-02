@@ -37,26 +37,25 @@ class HyperliquidClient:
         """Establish connection to Hyperliquid API."""
         try:
             from hyperliquid.info import Info
-            from hyperliquid.exchange import Exchange
-            from hyperliquid.utils import constants
 
-            base_url = (
-                constants.TESTNET_API_URL if self._testnet
-                else constants.MAINNET_API_URL
-            )
+            # Always use mainnet for real price data
+            base_url = "https://api.hyperliquid.xyz"
 
             self._info = Info(base_url, skip_ws=True)
 
             if self._private_key:
-                self._exchange = Exchange(
-                    self._private_key,
-                    base_url,
-                    account_address=self._account_address or None,
-                )
+                try:
+                    from hyperliquid.exchange import Exchange
+                    self._exchange = Exchange(
+                        self._private_key,
+                        base_url,
+                        account_address=self._account_address or None,
+                    )
+                except Exception as e:
+                    logger.warning(f"Exchange init failed (read-only mode): {e}")
 
             self._connected = True
-            mode = "testnet" if self._testnet else "MAINNET"
-            logger.info(f"Connected to Hyperliquid ({mode})")
+            logger.info("Connected to Hyperliquid (mainnet - read-only)")
 
         except ImportError:
             logger.warning(
