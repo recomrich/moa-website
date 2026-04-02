@@ -200,14 +200,6 @@ class TradingBot:
                 # Update shared state for dashboard
                 set_bot_state(self._get_bot_state())
 
-                # Broadcast updates via WebSocket (fire and forget)
-                try:
-                    loop = asyncio.new_event_loop()
-                    loop.run_until_complete(self._broadcast_updates())
-                    loop.close()
-                except Exception:
-                    pass
-
                 elapsed = time.time() - loop_start
                 sleep_time = max(0, self._update_interval - elapsed)
                 if sleep_time > 0:
