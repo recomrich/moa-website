@@ -1,6 +1,6 @@
 bot:
   mode: "paper"  # "paper" (simulation) or "live" (real trading)
-  update_interval: 60  # seconds between each analysis cycle
+  update_interval: 5  # seconds between each analysis cycle
 
 risk:
   max_risk_per_trade_pct: 1.0

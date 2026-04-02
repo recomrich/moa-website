@@ -214,8 +214,13 @@ class TradingBot:
         # 1. Update prices
         prices = self._feed.get_current_prices()
         if not prices:
-            logger.debug("No price data available")
+            logger.warning("No price data available - check connection")
             return
+
+        # Log key prices
+        tracked_symbols = [p["symbol"] for p in self._trading_pairs]
+        price_info = {s: f"${prices[s]:,.2f}" for s in tracked_symbols if s in prices}
+        logger.info(f"Prices: {price_info}")
 
         # 2. Check SL/TP triggers
         triggered = self._position_manager.update_prices(prices)
@@ -277,10 +282,14 @@ class TradingBot:
                 symbol, strategy.timeframe, self._feed.get_ohlcv
             )
             if df.empty:
+                logger.warning(f"No candle data for {symbol} ({strategy.timeframe})")
                 continue
 
             # Generate signal
             signal = self._strategy_manager.run_strategy(strategy_name, df)
+            logger.info(
+                f"[{strategy_name}] {symbol} ({strategy.timeframe}) -> {signal.value if signal else 'ERROR'}"
+            )
             if signal is None or signal == Signal.HOLD:
                 continue
 
