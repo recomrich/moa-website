@@ -59,8 +59,49 @@ class OrderManager:
         self._pending_orders: dict[str, Order] = {}
         self._filled_orders: list[Order] = []
 
+    # Minimum order sizes and decimal precision per asset on Hyperliquid
+    SIZE_DECIMALS: dict[str, int] = {
+        "BTC": 4,
+        "ETH": 3,
+        "SOL": 1,
+        "DOGE": 0,
+        "AVAX": 1,
+        "MATIC": 0,
+        "ARB": 0,
+        "OP": 1,
+        "SUI": 1,
+    }
+    MIN_ORDER_VALUE = 10.0  # Minimum $10 order
+
+    def _round_size(self, symbol: str, size: float, price: float) -> float:
+        """Round order size to valid precision for Hyperliquid."""
+        decimals = self.SIZE_DECIMALS.get(symbol, 2)
+        rounded = round(size, decimals)
+
+        # Ensure minimum order value
+        if rounded * price < self.MIN_ORDER_VALUE:
+            rounded = round(self.MIN_ORDER_VALUE / price, decimals)
+
+        # Floor to avoid exceeding balance
+        factor = 10 ** decimals
+        rounded = int(rounded * factor) / factor
+
+        return rounded
+
     def place_order(self, order: Order) -> Order:
         """Place an order on the exchange or simulate in paper mode."""
+        # Get price for size validation
+        mids = self._client.get_all_mids() if self._client.is_connected else {}
+        price = float(mids.get(order.symbol, 0)) or 1.0
+
+        # Round size to valid precision
+        order.size = self._round_size(order.symbol, order.size, price)
+
+        if order.size <= 0:
+            order.status = OrderStatus.REJECTED
+            logger.warning(f"Order size too small for {order.symbol}")
+            return order
+
         logger.info(
             f"{'[PAPER] ' if self._paper_mode else ''}"
             f"Placing {order.side.value} {order.order_type.value} order: "
