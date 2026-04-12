@@ -162,6 +162,23 @@ class TradingBot:
         # Connect to exchange
         self._client.connect()
 
+        # Fetch real balance in live mode
+        if not self._paper_mode and self._client.is_connected:
+            try:
+                user_state = self._client.get_user_state()
+                if user_state:
+                    real_balance = float(
+                        user_state.get("marginSummary", {}).get("accountValue", 0)
+                    )
+                    if real_balance > 0:
+                        self._portfolio = Portfolio(initial_capital=real_balance)
+                        self._risk_manager.update_capital(real_balance)
+                        logger.info(f"Real balance loaded: ${real_balance:,.2f}")
+                    else:
+                        logger.warning("Account balance is 0 - check your wallet")
+            except Exception as e:
+                logger.error(f"Failed to load balance: {e}")
+
         # Share state with dashboard
         set_bot_state(self._get_bot_state())
 

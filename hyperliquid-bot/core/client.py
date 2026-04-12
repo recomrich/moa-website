@@ -46,16 +46,22 @@ class HyperliquidClient:
             if self._private_key:
                 try:
                     from hyperliquid.exchange import Exchange
+                    from eth_account import Account
+                    wallet = Account.from_key(self._private_key)
+                    address = self._account_address or wallet.address
+                    self._account_address = address
                     self._exchange = Exchange(
-                        self._private_key,
+                        wallet,
                         base_url,
-                        account_address=self._account_address or None,
+                        account_address=address,
                     )
+                    logger.info(f"Exchange authenticated: {address[:10]}...")
                 except Exception as e:
                     logger.warning(f"Exchange init failed (read-only mode): {e}")
 
             self._connected = True
-            logger.info("Connected to Hyperliquid (mainnet - read-only)")
+            mode = "authenticated" if self._exchange else "read-only"
+            logger.info(f"Connected to Hyperliquid (mainnet - {mode})")
 
         except ImportError:
             logger.warning(
