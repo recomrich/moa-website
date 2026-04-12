@@ -186,7 +186,16 @@ class TradingBot:
 
                 if total > 0:
                     self._portfolio = Portfolio(initial_capital=total)
-                    self._risk_manager.update_capital(total)
+                    risk_cfg = self._config.get("risk", {})
+                    self._risk_manager = RiskManager(
+                        RiskConfig(
+                            max_risk_per_trade_pct=risk_cfg.get("max_risk_per_trade_pct", 1.0),
+                            max_drawdown_pct=risk_cfg.get("max_drawdown_pct", 10.0),
+                            max_open_positions=risk_cfg.get("max_open_positions", 5),
+                            min_reward_risk_ratio=risk_cfg.get("min_reward_risk_ratio", 2.0),
+                        ),
+                        initial_capital=total,
+                    )
                     logger.info(f"Real balance loaded: ${total:,.2f}")
                 else:
                     logger.warning("Account balance is 0 - check your wallet")
