@@ -139,7 +139,7 @@ class RiskManager:
             return False
 
         ratio = reward / risk
-        if ratio < self._config.min_reward_risk_ratio:
+        if ratio < self._config.min_reward_risk_ratio - 0.01:
             logger.warning(
                 f"R:R ratio {ratio:.2f} below minimum "
                 f"{self._config.min_reward_risk_ratio}"
