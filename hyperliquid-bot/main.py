@@ -165,33 +165,29 @@ class TradingBot:
         # Fetch real balance in live mode
         if not self._paper_mode and self._client.is_connected:
             try:
-                user_state = self._client.get_user_state()
-                logger.info(f"User state keys: {list(user_state.keys()) if user_state else 'None'}")
-
                 real_balance = 0.0
+
+                # Check Perps balance
+                user_state = self._client.get_user_state()
                 if user_state:
-                    # Try multiple fields to find balance
                     margin = user_state.get("marginSummary", {})
                     real_balance = float(margin.get("accountValue", 0))
 
-                    if real_balance == 0:
-                        real_balance = float(margin.get("totalMarginUsed", 0))
+                # Check Spot balance (USDC)
+                spot_balance = 0.0
+                spot_balances = self._client.get_spot_balances()
+                for bal in spot_balances:
+                    if bal.get("coin") == "USDC":
+                        spot_balance = float(bal.get("total", 0))
+                        break
 
-                    if real_balance == 0:
-                        # Try crossMarginSummary
-                        cross = user_state.get("crossMarginSummary", {})
-                        real_balance = float(cross.get("accountValue", 0))
+                total = real_balance + spot_balance
+                logger.info(f"Perps balance: ${real_balance:,.2f} | Spot USDC: ${spot_balance:,.2f} | Total: ${total:,.2f}")
 
-                    if real_balance == 0:
-                        # Try withdrawable
-                        real_balance = float(user_state.get("withdrawable", 0))
-
-                    logger.info(f"Margin data: {margin}")
-
-                if real_balance > 0:
-                    self._portfolio = Portfolio(initial_capital=real_balance)
-                    self._risk_manager.update_capital(real_balance)
-                    logger.info(f"Real balance loaded: ${real_balance:,.2f}")
+                if total > 0:
+                    self._portfolio = Portfolio(initial_capital=total)
+                    self._risk_manager.update_capital(total)
+                    logger.info(f"Real balance loaded: ${total:,.2f}")
                 else:
                     logger.warning("Account balance is 0 - check your wallet")
             except Exception as e:
