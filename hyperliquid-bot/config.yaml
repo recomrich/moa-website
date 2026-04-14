@@ -13,14 +13,14 @@ trading_pairs:
     - symbol: "BTC"
       strategies: ["trend_following", "breakout"]
     - symbol: "ETH"
-      strategies: ["mean_reversion"]
+      strategies: ["mean_reversion", "grid_trading"]
   perps:
     - symbol: "BTC"
       leverage: 5
       strategies: ["trend_following", "scalping"]
     - symbol: "SOL"
       leverage: 3
-      strategies: ["breakout", "mean_reversion"]
+      strategies: ["breakout", "mean_reversion", "grid_trading"]
 
 strategies:
   trend_following:
@@ -46,6 +46,12 @@ strategies:
     ema_slow: 13
     tp_pct: 0.5
     sl_pct: 0.3
+  grid_trading:
+    enabled: true
+    timeframe: "15m"
+    grid_levels: 5
+    bb_period: 20
+    bb_std: 2.0
 
 dashboard:
   enabled: true

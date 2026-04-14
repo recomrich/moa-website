@@ -99,7 +99,7 @@ class PositionManager:
         return result
 
     def update_prices(self, prices: dict[str, float]) -> list[str]:
-        """Update unrealized PnL and check SL/TP triggers.
+        """Update unrealized PnL, trailing stops, and check SL/TP triggers.
 
         Returns list of position IDs that hit SL or TP.
         """
@@ -118,6 +118,18 @@ class PositionManager:
                 pos.unrealized_pnl = (
                     (pos.entry_price - current_price) * pos.size * pos.leverage
                 )
+
+            # Trailing stop: move SL in profit direction
+            if pos.stop_loss:
+                trail_distance = abs(pos.entry_price - pos.stop_loss)
+                if pos.side == OrderSide.BUY:
+                    new_sl = current_price - trail_distance
+                    if new_sl > pos.stop_loss:
+                        pos.stop_loss = round(new_sl, 6)
+                else:
+                    new_sl = current_price + trail_distance
+                    if new_sl < pos.stop_loss:
+                        pos.stop_loss = round(new_sl, 6)
 
             # Check stop-loss
             if pos.stop_loss:

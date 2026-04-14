@@ -325,8 +325,19 @@ class TradingBot:
                 logger.warning(f"No candle data for {symbol} ({strategy.timeframe})")
                 continue
 
-            # Generate signal
-            signal = self._strategy_manager.run_strategy(strategy_name, df)
+            # Get higher timeframe data for confirmation
+            from strategies.strategy_manager import CONFIRMATION_TIMEFRAMES
+            htf = CONFIRMATION_TIMEFRAMES.get(strategy.timeframe)
+            higher_tf_df = None
+            if htf:
+                higher_tf_df = self._cache.get_or_fetch(
+                    symbol, htf, self._feed.get_ohlcv
+                )
+
+            # Generate signal with multi-timeframe + regime confirmation
+            signal = self._strategy_manager.run_with_confirmation(
+                strategy_name, df, higher_tf_df, symbol
+            )
             logger.info(
                 f"[{strategy_name}] {symbol} ({strategy.timeframe}) -> {signal.value if signal else 'ERROR'}"
             )
