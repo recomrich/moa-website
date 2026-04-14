@@ -262,11 +262,38 @@ class TradingBot:
         price_info = {s: f"${prices[s]:,.2f}" for s in tracked_symbols if s in prices}
         logger.info(f"Prices: {price_info}")
 
-        # 2. Check SL/TP triggers
-        triggered = self._position_manager.update_prices(prices)
+        # 2. Check SL/TP triggers and trailing stop updates
+        triggered, sl_updated = self._position_manager.update_prices(prices)
+
+        # Handle positions whose trailing SL moved -> update on exchange
+        for pos_id in sl_updated:
+            pos = self._position_manager.get_position(pos_id)
+            if pos and pos.stop_loss:
+                new_oid = self._order_manager.update_stop_loss(
+                    pos.symbol, pos.side, pos.size,
+                    pos.sl_order_id, pos.stop_loss,
+                )
+                if new_oid:
+                    pos.sl_order_id = new_oid
+                    logger.info(
+                        f"Trailing SL updated on exchange: {pos.symbol} "
+                        f"new SL={pos.stop_loss}"
+                    )
+
+        # Handle triggered SL/TP
         for pos_id in triggered:
             pos = self._position_manager.get_position(pos_id)
             if pos:
+                # Cancel remaining TP or SL order on exchange
+                if pos.tp_order_id:
+                    self._order_manager.cancel_trigger_order(
+                        pos.symbol, pos.tp_order_id
+                    )
+                if pos.sl_order_id:
+                    self._order_manager.cancel_trigger_order(
+                        pos.symbol, pos.sl_order_id
+                    )
+
                 exit_price = prices.get(pos.symbol, pos.entry_price)
                 result = self._position_manager.close_position(
                     pos_id, exit_price, reason="sl_tp_triggered"
@@ -411,7 +438,12 @@ class TradingBot:
         filled_order = self._order_manager.place_order(order)
 
         if filled_order.fill_price:
-            # Record position
+            # Place TP/SL trigger orders on the exchange
+            sl_oid, tp_oid = self._order_manager.place_tp_sl(
+                symbol, side, filled_order.size or size, sl, tp,
+            )
+
+            # Record position with exchange TP/SL order IDs
             position = Position(
                 symbol=symbol,
                 side=side,
@@ -422,8 +454,15 @@ class TradingBot:
                 stop_loss=sl,
                 take_profit=tp,
                 strategy_name=strategy.name,
+                sl_order_id=sl_oid,
+                tp_order_id=tp_oid,
             )
             self._position_manager.open_position(position)
+
+            logger.info(
+                f"TP/SL placed on exchange: SL={sl} (oid={sl_oid}) "
+                f"TP={tp} (oid={tp_oid})"
+            )
 
             # Save order to DB
             self._repository.save_order({

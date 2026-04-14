@@ -196,6 +196,152 @@ class OrderManager:
 
         return order
 
+    def place_trigger_order(
+        self, symbol: str, is_buy: bool, size: float,
+        trigger_price: float, tpsl: str, reduce_only: bool = True
+    ) -> Optional[str]:
+        """Place a trigger order (TP or SL) on Hyperliquid.
+
+        Args:
+            symbol: Trading pair symbol.
+            is_buy: True for buy, False for sell.
+            size: Order size.
+            trigger_price: Price at which the order triggers.
+            tpsl: "tp" for take-profit, "sl" for stop-loss.
+            reduce_only: Whether this order only reduces a position.
+
+        Returns:
+            Exchange order ID if successful, None otherwise.
+        """
+        if self._paper_mode:
+            fake_id = f"paper_{tpsl}_{str(uuid.uuid4())[:6]}"
+            logger.info(
+                f"[PAPER] {tpsl.upper()} trigger order placed: "
+                f"{symbol} {'BUY' if is_buy else 'SELL'} "
+                f"size={size} trigger={trigger_price}"
+            )
+            return fake_id
+
+        exchange = self._client.exchange
+        if not exchange:
+            logger.error("No exchange connection - cannot place trigger order")
+            return None
+
+        try:
+            # Round size
+            mids = self._client.get_all_mids() if self._client.is_connected else {}
+            price = float(mids.get(symbol, trigger_price))
+            size = self._round_size(symbol, size, price)
+            if size <= 0:
+                return None
+
+            order_type = {
+                "trigger": {
+                    "triggerPx": str(round(trigger_price, 2)),
+                    "isMarket": True,
+                    "tpsl": tpsl,
+                }
+            }
+
+            result = exchange.order(
+                symbol, is_buy, size, trigger_price,
+                order_type, reduce_only=reduce_only,
+            )
+
+            if result.get("status") == "ok":
+                statuses = (
+                    result.get("response", {})
+                    .get("data", {})
+                    .get("statuses", [])
+                )
+                if statuses and "resting" in statuses[0]:
+                    oid = str(statuses[0]["resting"]["oid"])
+                    logger.info(
+                        f"{tpsl.upper()} order placed on exchange: "
+                        f"{symbol} trigger={trigger_price} oid={oid}"
+                    )
+                    return oid
+                # Some trigger orders return differently
+                logger.info(
+                    f"{tpsl.upper()} order submitted: {symbol} "
+                    f"trigger={trigger_price}"
+                )
+                return "submitted"
+            else:
+                logger.error(f"Trigger order failed: {result}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Failed to place {tpsl} order: {e}")
+            return None
+
+    def place_tp_sl(
+        self, symbol: str, side: OrderSide, size: float,
+        stop_loss: Optional[float], take_profit: Optional[float],
+    ) -> tuple[Optional[str], Optional[str]]:
+        """Place both TP and SL trigger orders for a position.
+
+        Args:
+            symbol: Trading pair.
+            side: Position side (BUY = long, SELL = short).
+            size: Position size.
+            stop_loss: Stop-loss price.
+            take_profit: Take-profit price.
+
+        Returns:
+            Tuple of (sl_order_id, tp_order_id).
+        """
+        # For a long position, TP/SL are SELL orders (to close)
+        # For a short position, TP/SL are BUY orders (to close)
+        close_is_buy = side == OrderSide.SELL
+
+        sl_oid = None
+        tp_oid = None
+
+        if stop_loss:
+            sl_oid = self.place_trigger_order(
+                symbol, close_is_buy, size, stop_loss, "sl"
+            )
+
+        if take_profit:
+            tp_oid = self.place_trigger_order(
+                symbol, close_is_buy, size, take_profit, "tp"
+            )
+
+        return sl_oid, tp_oid
+
+    def cancel_trigger_order(self, symbol: str, order_id: str) -> bool:
+        """Cancel a trigger order on the exchange."""
+        if self._paper_mode:
+            logger.info(f"[PAPER] Trigger order cancelled: {order_id}")
+            return True
+
+        if not self._client.exchange or not order_id or order_id == "submitted":
+            return False
+
+        try:
+            result = self._client.exchange.cancel(symbol, int(order_id))
+            if result.get("status") == "ok":
+                logger.info(f"Trigger order cancelled: {order_id}")
+                return True
+            logger.warning(f"Cancel trigger order failed: {result}")
+        except Exception as e:
+            logger.error(f"Cancel trigger order error: {e}")
+        return False
+
+    def update_stop_loss(
+        self, symbol: str, side: OrderSide, size: float,
+        old_sl_oid: Optional[str], new_sl_price: float,
+    ) -> Optional[str]:
+        """Update a stop-loss by cancelling old and placing new."""
+        if old_sl_oid:
+            self.cancel_trigger_order(symbol, old_sl_oid)
+
+        close_is_buy = side == OrderSide.SELL
+        return self.place_trigger_order(
+            symbol, close_is_buy, size, new_sl_price, "sl"
+        )
+
     def cancel_order(self, order: Order) -> bool:
         """Cancel a pending order."""
         if self._paper_mode:

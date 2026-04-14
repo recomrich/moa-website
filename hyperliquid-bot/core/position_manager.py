@@ -27,6 +27,8 @@ class Position:
     strategy_name: str = ""
     opened_at: float = field(default_factory=time.time)
     position_id: str = ""
+    sl_order_id: Optional[str] = None
+    tp_order_id: Optional[str] = None
 
     @property
     def pnl_pct(self) -> float:
@@ -98,12 +100,18 @@ class PositionManager:
         )
         return result
 
-    def update_prices(self, prices: dict[str, float]) -> list[str]:
+    def update_prices(
+        self, prices: dict[str, float]
+    ) -> tuple[list[str], list[str]]:
         """Update unrealized PnL, trailing stops, and check SL/TP triggers.
 
-        Returns list of position IDs that hit SL or TP.
+        Returns:
+            Tuple of (triggered_ids, sl_updated_ids).
+            - triggered_ids: positions that hit SL or TP.
+            - sl_updated_ids: positions whose trailing SL moved (need exchange update).
         """
         triggered: list[str] = []
+        sl_updated: list[str] = []
 
         for pos_id, pos in list(self._positions.items()):
             current_price = prices.get(pos.symbol)
@@ -121,6 +129,7 @@ class PositionManager:
 
             # Trailing stop: move SL in profit direction
             if pos.stop_loss:
+                old_sl = pos.stop_loss
                 trail_distance = abs(pos.entry_price - pos.stop_loss)
                 if pos.side == OrderSide.BUY:
                     new_sl = current_price - trail_distance
@@ -130,6 +139,10 @@ class PositionManager:
                     new_sl = current_price + trail_distance
                     if new_sl < pos.stop_loss:
                         pos.stop_loss = round(new_sl, 6)
+
+                # Track if SL moved significantly (>0.5%) for exchange update
+                if old_sl > 0 and abs(pos.stop_loss - old_sl) / old_sl > 0.005:
+                    sl_updated.append(pos_id)
 
             # Check stop-loss
             if pos.stop_loss:
@@ -149,7 +162,7 @@ class PositionManager:
                     triggered.append(pos_id)
                     continue
 
-        return triggered
+        return triggered, sl_updated
 
     def get_position(self, position_id: str) -> Optional[Position]:
         return self._positions.get(position_id)
