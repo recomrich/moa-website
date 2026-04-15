@@ -368,11 +368,13 @@ class TradingBot:
                 )
 
             # Generate signal with multi-timeframe + regime confirmation
-            signal = self._strategy_manager.run_with_confirmation(
+            signal, confidence = self._strategy_manager.run_with_confirmation(
                 strategy_name, df, higher_tf_df, symbol
             )
             logger.info(
-                f"[{strategy_name}] {symbol} ({strategy.timeframe}) -> {signal.value if signal else 'ERROR'}"
+                f"[{strategy_name}] {symbol} ({strategy.timeframe}) -> "
+                f"{signal.value if signal else 'ERROR'} "
+                f"(confidence={confidence}%)"
             )
             if signal is None or signal == Signal.HOLD:
                 continue
@@ -382,10 +384,50 @@ class TradingBot:
                 strategy_name, symbol, strategy.timeframe, signal.value
             )
 
+            # Dynamic leverage based on confidence
+            actual_leverage = self._calculate_leverage(
+                leverage, confidence, is_perp
+            )
+
             # Execute signal
             self._execute_signal(
-                signal, symbol, strategy, df, is_perp, leverage
+                signal, symbol, strategy, df, is_perp, actual_leverage
             )
+
+    def _calculate_leverage(
+        self, base_leverage: int, confidence: int, is_perp: bool
+    ) -> int:
+        """Calculate dynamic leverage based on signal confidence.
+
+        Confidence tiers:
+            85-100% -> max leverage (20x)
+            70-84%  -> high leverage (15x)
+            50-69%  -> medium leverage (10x)
+            30-49%  -> base leverage from config
+            <30%    -> minimum (1x)
+
+        Only applies to perps. Spot always uses 1x.
+        """
+        if not is_perp:
+            return 1
+
+        leverage_cfg = self._config.get("risk", {})
+        max_lev = leverage_cfg.get("max_leverage", 20)
+
+        if confidence >= 85:
+            lev = max_lev           # 20x - very strong signal
+        elif confidence >= 70:
+            lev = min(15, max_lev)  # 15x - strong signal
+        elif confidence >= 50:
+            lev = min(10, max_lev)  # 10x - decent signal
+        else:
+            lev = base_leverage     # config default (3x-5x)
+
+        logger.info(
+            f"Dynamic leverage: confidence={confidence}% -> {lev}x "
+            f"(base={base_leverage}x, max={max_lev}x)"
+        )
+        return lev
 
     def _execute_signal(
         self,

@@ -83,19 +83,26 @@ class StrategyManager:
         df: pd.DataFrame,
         higher_tf_df: Optional[pd.DataFrame] = None,
         symbol: str = "",
-    ) -> Optional[Signal]:
+    ) -> tuple[Optional[Signal], int]:
         """Run strategy with multi-timeframe confirmation and regime check.
 
-        Signal is only valid if:
-        1. The strategy generates BUY or SELL
-        2. The higher timeframe trend agrees (if data available)
-        3. The market regime is suitable for this strategy
+        Returns:
+            Tuple of (signal, confidence).
+            confidence is 0-100: higher = stronger signal = can use more leverage.
+            - 30+ points: base signal confirmed
+            - 50+ points: regime + strategy aligned
+            - 70+ points: higher timeframe confirms too
+            - 85+ points: strong momentum + volume confirmation
         """
         signal = self.run_strategy(strategy_name, df)
         if signal is None or signal == Signal.HOLD:
-            return signal
+            return signal, 0
+
+        # Start confidence at 30 (basic signal)
+        confidence = 30
 
         # Regime check: is this strategy suitable for current conditions?
+        regime = None
         if symbol and not df.empty:
             regime = self._regime_detector.detect(df, symbol)
             recommended = self._regime_detector.get_recommended_strategies(regime)
@@ -104,9 +111,12 @@ class StrategyManager:
                     f"[{strategy_name}] Signal {signal.value} ignored - "
                     f"regime {regime.value} favors {recommended}"
                 )
-                return Signal.HOLD
+                return Signal.HOLD, 0
+            # Regime matches strategy: +20 confidence
+            confidence += 20
 
         # Multi-timeframe confirmation
+        htf_confirmed = False
         if higher_tf_df is not None and not higher_tf_df.empty:
             from indicators.trend import ema
             from indicators.momentum import rsi as calc_rsi
@@ -122,16 +132,57 @@ class StrategyManager:
                         f"[{strategy_name}] BUY rejected - "
                         f"higher timeframe trend is bearish"
                     )
-                    return Signal.HOLD
+                    return Signal.HOLD, 0
 
                 if signal == Signal.SELL and htf_trend_up:
                     logger.info(
                         f"[{strategy_name}] SELL rejected - "
                         f"higher timeframe trend is bullish"
                     )
-                    return Signal.HOLD
+                    return Signal.HOLD, 0
 
-        return signal
+                # Higher TF confirms: +20 confidence
+                confidence += 20
+                htf_confirmed = True
+
+        # Momentum & volume bonus: RSI not extreme + strong candle
+        if not df.empty and len(df) > 20:
+            from indicators.momentum import rsi as calc_rsi
+            from indicators.volume import obv
+
+            rsi_values = calc_rsi(df)
+            if not rsi_values.empty and not pd.isna(rsi_values.iloc[-1]):
+                rsi_val = rsi_values.iloc[-1]
+                # RSI in strong zone (not overbought/oversold extreme)
+                if signal == Signal.BUY and 40 < rsi_val < 65:
+                    confidence += 10
+                elif signal == Signal.SELL and 35 < rsi_val < 60:
+                    confidence += 10
+
+            # Volume increasing (OBV rising)
+            obv_values = obv(df)
+            if len(obv_values) > 5:
+                obv_trend = obv_values.iloc[-1] > obv_values.iloc[-5]
+                if signal == Signal.BUY and obv_trend:
+                    confidence += 10
+                elif signal == Signal.SELL and not obv_trend:
+                    confidence += 10
+
+        # Strong trend regime bonus
+        if regime:
+            from strategies.regime_detector import MarketRegime
+            if signal == Signal.BUY and regime == MarketRegime.TRENDING_UP:
+                confidence += 10
+            elif signal == Signal.SELL and regime == MarketRegime.TRENDING_DOWN:
+                confidence += 10
+
+        confidence = min(confidence, 100)
+        logger.info(
+            f"[{strategy_name}] {symbol} confidence={confidence}% "
+            f"(regime={'ok' if regime else 'n/a'}, "
+            f"htf={'confirmed' if htf_confirmed else 'n/a'})"
+        )
+        return signal, confidence
 
     def get_consensus(
         self,
