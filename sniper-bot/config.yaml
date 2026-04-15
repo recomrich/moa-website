@@ -1,0 +1,23 @@
+bot:
+  mode: "paper"  # "paper" ou "live"
+  scan_interval: 3  # secondes entre chaque scan
+
+scanner:
+  min_spike_pct_1m: 1.5    # mouvement minimum en 1 minute pour declencher
+  min_spike_pct_5m: 3.0    # mouvement minimum en 5 minutes
+  min_spike_pct_15m: 5.0   # mouvement minimum en 15 minutes
+  cooldown_seconds: 300     # attendre 5 min avant re-signaler meme crypto
+  blacklist: []             # cryptos a ignorer ex: ["LUNC", "USTC"]
+
+trading:
+  risk_per_trade_pct: 2.0   # % du capital risque par trade
+  max_open_trades: 3        # max trades simultanes
+  tp_pct: 2.0               # take profit % (ajuste par la force du signal)
+  sl_pct: 1.0               # stop loss % (ajuste par la force du signal)
+  max_hold_minutes: 5       # fermer automatiquement apres X minutes
+  min_strength: 40          # force minimum du signal (0-100) pour trader
+
+dashboard:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8090  # port different du bot principal (8080)
