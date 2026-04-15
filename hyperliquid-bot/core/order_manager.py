@@ -64,6 +64,7 @@ class OrderManager:
         "BTC": 4,
         "ETH": 3,
         "SOL": 1,
+        "XRP": 0,
         "DOGE": 0,
         "AVAX": 1,
         "MATIC": 0,

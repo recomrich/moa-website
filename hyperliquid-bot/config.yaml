@@ -17,6 +17,8 @@ trading_pairs:
       strategies: ["trend_following", "breakout"]
     - symbol: "ETH"
       strategies: ["mean_reversion", "grid_trading"]
+    - symbol: "XRP"
+      strategies: ["trend_following", "mean_reversion", "grid_trading"]
   perps:
     - symbol: "BTC"
       leverage: 5
@@ -24,6 +26,9 @@ trading_pairs:
     - symbol: "SOL"
       leverage: 3
       strategies: ["breakout", "mean_reversion", "grid_trading"]
+    - symbol: "XRP"
+      leverage: 5
+      strategies: ["trend_following", "breakout", "mean_reversion"]
 
 strategies:
   trend_following:
