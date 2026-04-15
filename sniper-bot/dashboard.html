@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SNIPER BOT - Hyperliquid</title>
+    <title>SNIPER BOT - Hyperliquid (Pullback)</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -25,6 +25,10 @@
             font-size: 24px;
             color: #ff0040;
             text-shadow: 0 0 10px rgba(255, 0, 64, 0.5);
+        }
+        .header .subtitle {
+            font-size: 11px;
+            color: #ffaa00;
         }
         .header .status {
             display: flex;
@@ -67,6 +71,9 @@
             margin-bottom: 10px;
             padding-bottom: 5px;
             border-bottom: 1px solid #222;
+        }
+        .panel h2.pullback-title {
+            color: #ffaa00;
         }
 
         .stats-row {
@@ -117,6 +124,7 @@
         .pump { color: #00ff41; }
         .dump { color: #ff0040; }
         .neutral { color: #888; }
+        .waiting { color: #ffaa00; }
 
         .badge {
             padding: 2px 8px;
@@ -126,6 +134,7 @@
         }
         .badge.buy { background: rgba(0, 255, 65, 0.15); color: #00ff41; }
         .badge.sell { background: rgba(255, 0, 64, 0.15); color: #ff0040; }
+        .badge.pending { background: rgba(255, 170, 0, 0.15); color: #ffaa00; }
 
         .strength-bar {
             width: 60px;
@@ -142,6 +151,23 @@
         .strength-bar .fill.high { background: #00ff41; }
         .strength-bar .fill.med { background: #ffaa00; }
         .strength-bar .fill.low { background: #ff0040; }
+
+        .phase-indicator {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        .phase-indicator.waiting-pullback {
+            background: rgba(255, 170, 0, 0.2);
+            color: #ffaa00;
+        }
+        .phase-indicator.pullback-found {
+            background: rgba(0, 255, 65, 0.2);
+            color: #00ff41;
+            animation: pulse 1s infinite;
+        }
 
         .timer {
             font-family: monospace;
@@ -170,7 +196,10 @@
 <body>
 
 <div class="header">
-    <h1>SNIPER BOT</h1>
+    <div>
+        <h1>SNIPER BOT</h1>
+        <span class="subtitle">PULLBACK MODE</span>
+    </div>
     <div class="status">
         <span><span class="dot" id="statusDot"></span> <span id="statusText">Connecting...</span></span>
         <span>Mode: <strong id="modeText">-</strong></span>
@@ -193,12 +222,39 @@
         <div class="label">Win Rate</div>
     </div>
     <div class="stat-card">
+        <div class="value" id="pendingCount">0</div>
+        <div class="label">En Attente</div>
+    </div>
+    <div class="stat-card">
         <div class="value" id="openTrades">0</div>
-        <div class="label">Positions Ouvertes</div>
+        <div class="label">Positions</div>
     </div>
     <div class="stat-card">
         <div class="value" id="avgHold">0s</div>
         <div class="label">Temps Moyen</div>
+    </div>
+</div>
+
+<!-- Pending pullbacks panel -->
+<div class="grid full" style="padding-bottom: 0;">
+    <div class="panel">
+        <h2 class="pullback-title">Signaux en attente de pullback</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Crypto</th>
+                    <th>Direction</th>
+                    <th>Prix Spike</th>
+                    <th>Retrace</th>
+                    <th>Phase</th>
+                    <th>Force</th>
+                    <th>Attente</th>
+                </tr>
+            </thead>
+            <tbody id="pullbackTable">
+                <tr><td colspan="7" class="empty-state">Aucun spike detecte...</td></tr>
+            </tbody>
+        </table>
     </div>
 </div>
 
@@ -218,7 +274,7 @@
                 </tr>
             </thead>
             <tbody id="openTradesTable">
-                <tr><td colspan="7" class="empty-state">En attente de signaux...</td></tr>
+                <tr><td colspan="7" class="empty-state">En attente de signaux confirmes...</td></tr>
             </tbody>
         </table>
     </div>
@@ -290,6 +346,13 @@ function changeClass(val) {
     return 'neutral';
 }
 
+function formatPrice(p) {
+    if (p < 0.001) return p.toFixed(8);
+    if (p < 1) return p.toFixed(6);
+    if (p < 100) return p.toFixed(3);
+    return p.toFixed(1);
+}
+
 function update() {
     fetch(API)
         .then(r => r.json())
@@ -314,19 +377,45 @@ function update() {
             document.getElementById('openTrades').textContent = stats.open_trades || 0;
             document.getElementById('avgHold').textContent = `${stats.avg_hold_time || 0}s`;
 
+            // Pending pullbacks
+            const pending = data.pending_pullbacks || [];
+            document.getElementById('pendingCount').textContent = pending.length;
+            const pbBody = document.getElementById('pullbackTable');
+            if (pending.length === 0) {
+                pbBody.innerHTML = '<tr><td colspan="7" class="empty-state">Aucun spike detecte...</td></tr>';
+            } else {
+                pbBody.innerHTML = pending.map(p => {
+                    const dirClass = p.direction === 'pump' ? 'buy' : 'sell';
+                    const phaseClass = p.pullback_reached ? 'pullback-found' : 'waiting-pullback';
+                    const phaseText = p.pullback_reached ? 'REBOND?' : 'RECUL?';
+                    const remaining = p.max_wait - p.wait_time;
+                    return `
+                        <tr>
+                            <td><strong>${p.symbol}</strong></td>
+                            <td><span class="badge ${dirClass}">${p.direction.toUpperCase()}</span></td>
+                            <td>$${formatPrice(p.spike_price)}</td>
+                            <td class="waiting">${p.retrace_pct >= 0 ? '-' : '+'}${Math.abs(p.retrace_pct)}%</td>
+                            <td><span class="phase-indicator ${phaseClass}">${phaseText}</span></td>
+                            <td>${strengthBar(p.strength)}</td>
+                            <td class="timer">${p.wait_time}s / ${p.max_wait}s</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
             // Open trades
             const openTrades = data.open_trades || [];
             const otBody = document.getElementById('openTradesTable');
             if (openTrades.length === 0) {
-                otBody.innerHTML = '<tr><td colspan="7" class="empty-state">En attente de signaux...</td></tr>';
+                otBody.innerHTML = '<tr><td colspan="7" class="empty-state">En attente de signaux confirmes...</td></tr>';
             } else {
                 otBody.innerHTML = openTrades.map(t => `
                     <tr>
                         <td><strong>${t.symbol}</strong></td>
                         <td><span class="badge ${t.side}">${t.direction.toUpperCase()}</span></td>
                         <td>${t.leverage}x</td>
-                        <td>$${t.entry_price.toFixed(4)}</td>
-                        <td class="dump">$${t.stop_loss.toFixed(2)}</td>
+                        <td>$${formatPrice(t.entry_price)}</td>
+                        <td class="dump">$${formatPrice(t.stop_loss)}</td>
                         <td>${strengthBar(t.strength)}</td>
                         <td class="timer">${t.age}s / ${t.max_hold}s</td>
                     </tr>
@@ -342,7 +431,7 @@ function update() {
                 mBody.innerHTML = movers.map(m => `
                     <tr class="mover-row">
                         <td><strong>${m.symbol}</strong></td>
-                        <td>$${m.price < 1 ? m.price.toFixed(6) : m.price < 100 ? m.price.toFixed(3) : m.price.toFixed(1)}</td>
+                        <td>$${formatPrice(m.price)}</td>
                         <td class="${changeClass(m.change_1m)}">${m.change_1m >= 0 ? '+' : ''}${m.change_1m}%</td>
                         <td class="${changeClass(m.change_5m)}">${m.change_5m >= 0 ? '+' : ''}${m.change_5m}%</td>
                         <td class="${changeClass(m.change_15m)}">${m.change_15m >= 0 ? '+' : ''}${m.change_15m}%</td>
@@ -363,8 +452,8 @@ function update() {
                             <td><strong>${t.symbol}</strong></td>
                             <td><span class="badge ${t.side}">${t.direction.toUpperCase()}</span></td>
                             <td>${t.leverage}x</td>
-                            <td>$${t.entry_price.toFixed(4)}</td>
-                            <td>$${t.exit_price.toFixed(4)}</td>
+                            <td>$${formatPrice(t.entry_price)}</td>
+                            <td>$${formatPrice(t.exit_price)}</td>
                             <td class="${pnlCls}"><strong>$${t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}</strong> (${t.pnl_pct >= 0 ? '+' : ''}${t.pnl_pct}%)</td>
                             <td>${t.reason}</td>
                             <td>${t.hold_time}s</td>
@@ -375,7 +464,7 @@ function update() {
             }
 
             document.getElementById('scanline').textContent =
-                `Scan #${data.scan_count} | ${movers.length} assets tracked | Updated ${new Date().toLocaleTimeString()}`;
+                `Scan #${data.scan_count} | ${movers.length} assets | ${pending.length} pullbacks en attente | ${new Date().toLocaleTimeString()}`;
         })
         .catch(() => {
             document.getElementById('statusDot').className = 'dot inactive';

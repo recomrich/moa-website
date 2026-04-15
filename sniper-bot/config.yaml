@@ -9,11 +9,21 @@ scanner:
   cooldown_seconds: 300     # attendre 5 min avant re-signaler meme crypto
   blacklist: []             # cryptos a ignorer ex: ["LUNC", "USTC"]
 
+# NOUVEAU: Systeme de pullback
+# Au lieu de trader immediatement quand un spike est detecte,
+# le bot attend un recul du prix (pullback) puis une confirmation
+# avant d'entrer en position. Ca evite d'acheter au sommet!
+pullback:
+  min_pullback_pct: 0.3     # recul minimum (%) pour considerer un pullback
+  max_pullback_pct: 2.0     # si le prix recule plus que ca (%), signal annule
+  confirm_bounce_pct: 0.15  # rebond minimum (%) pour confirmer l'entree
+  max_wait_seconds: 90      # temps max (secondes) pour attendre le pullback
+
 trading:
   risk_per_trade_pct: 2.0   # % du capital risque par trade
   max_open_trades: 3        # max trades simultanes
-  tp_pct: 2.0               # take profit % (ajuste par la force du signal)
-  sl_pct: 1.0               # stop loss % (ajuste par la force du signal)
+  tp_pct: 2.0               # take profit % (utilise si pas de donnees pullback)
+  sl_pct: 1.0               # stop loss % (utilise si pas de donnees pullback)
   max_hold_minutes: 5       # fermer automatiquement apres X minutes
   min_strength: 40          # force minimum du signal (0-100) pour trader
 

@@ -1,7 +1,7 @@
 """Hyperliquid Sniper Bot - Detects and trades price spikes across ALL cryptos.
 
 Scans 150+ assets every few seconds, detects pumps/dumps,
-and enters with dynamic leverage for quick profits.
+waits for pullback confirmation, then enters with dynamic leverage.
 """
 
 from __future__ import annotations
@@ -120,13 +120,18 @@ class SniperBot:
         # Client
         self._client = HyperliquidClient()
 
-        # Scanner
+        # Scanner with pullback parameters
         scan_cfg = config.get("scanner", {})
+        pb_cfg = config.get("pullback", {})
         self._scanner = PriceScanner(
             min_spike_pct_1m=scan_cfg.get("min_spike_pct_1m", 1.5),
             min_spike_pct_5m=scan_cfg.get("min_spike_pct_5m", 3.0),
             min_spike_pct_15m=scan_cfg.get("min_spike_pct_15m", 5.0),
             blacklist=scan_cfg.get("blacklist", []),
+            min_pullback_pct=pb_cfg.get("min_pullback_pct", 0.3),
+            max_pullback_pct=pb_cfg.get("max_pullback_pct", 2.0),
+            confirm_bounce_pct=pb_cfg.get("confirm_bounce_pct", 0.15),
+            max_pullback_wait=pb_cfg.get("max_wait_seconds", 90),
         )
         self._scanner._signal_cooldown = scan_cfg.get("cooldown_seconds", 300)
 
@@ -150,9 +155,16 @@ class SniperBot:
         load_dotenv()
 
         logger.info("=" * 50)
-        logger.info("  HYPERLIQUID SNIPER BOT")
+        logger.info("  HYPERLIQUID SNIPER BOT (PULLBACK MODE)")
         logger.info(f"  Mode: {self._mode.upper()}")
         logger.info(f"  Scanning ALL cryptos every {self._scan_interval}s")
+        pb_cfg = self._config.get("pullback", {})
+        logger.info(
+            f"  Pullback: min={pb_cfg.get('min_pullback_pct', 0.3)}% "
+            f"max={pb_cfg.get('max_pullback_pct', 2.0)}% "
+            f"confirm={pb_cfg.get('confirm_bounce_pct', 0.15)}% "
+            f"wait={pb_cfg.get('max_wait_seconds', 90)}s"
+        )
         logger.info("=" * 50)
 
         self._client.connect()
@@ -232,7 +244,7 @@ class SniperBot:
         if not mids:
             return
 
-        # Scan for spikes
+        # Scan for spikes (returns only pullback-confirmed signals)
         signals = self._scanner.update_prices(mids)
 
         # Check existing trades for TP/SL/expiry
@@ -257,6 +269,7 @@ class SniperBot:
         # Periodic log
         if self._scan_count % 20 == 0:
             stats = self._executor.get_stats()
+            pending = self._scanner.get_pending_pullbacks()
             top_movers = self._scanner.get_all_changes()[:5]
             movers_str = " | ".join(
                 f"{m['symbol']} {m['change_1m']:+.1f}%"
@@ -265,11 +278,12 @@ class SniperBot:
             logger.info(
                 f"Scan #{self._scan_count} | "
                 f"{len(mids)} assets | "
+                f"Pending: {len(pending)} | "
                 f"Open: {stats['open_trades']} | "
                 f"Trades: {stats['total_trades']} "
                 f"(W:{stats['wins']} L:{stats['losses']}) | "
                 f"PnL: ${stats['total_pnl']:+.2f} | "
-                f"Top movers: {movers_str}"
+                f"Top: {movers_str}"
             )
 
         # Cleanup
@@ -285,6 +299,7 @@ class SniperBot:
             "scan_count": self._scan_count,
             "uptime": round(time.time() - self._start_time),
             "stats": stats,
+            "pending_pullbacks": self._scanner.get_pending_pullbacks(),
             "open_trades": [
                 {
                     "symbol": t.symbol,

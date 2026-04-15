@@ -1,4 +1,4 @@
-"""Trade executor - places and manages sniper trades."""
+"""Trade executor - places and manages sniper trades with pullback-aware SL/TP."""
 
 from __future__ import annotations
 
@@ -103,7 +103,13 @@ class TradeExecutor:
         return self.open_count < self._max_open and self._capital > 0
 
     def execute_signal(self, signal: SpikeSignal) -> Optional[SniperTrade]:
-        """Execute a spike signal - open a sniper trade."""
+        """Execute a spike signal - open a sniper trade.
+
+        When pullback data is available (spike_price + pullback_price),
+        uses smart SL/TP placement:
+        - SL just beyond the pullback extreme (logical level)
+        - TP targeting the spike peak with minimum 2:1 risk/reward
+        """
         if not self.can_trade:
             return None
 
@@ -126,26 +132,60 @@ class TradeExecutor:
         else:
             leverage = 5
 
-        # Dynamic TP/SL based on strength
-        # Stronger signals = wider TP, tighter SL (better R:R)
-        if signal.strength >= 70:
-            tp_mult = 1.5  # 3% TP
-            sl_mult = 0.8  # 0.8% SL
-        else:
-            tp_mult = 1.0  # 2% TP
-            sl_mult = 1.0  # 1% SL
-
-        tp_pct = self._tp_pct * tp_mult
-        sl_pct = self._sl_pct * sl_mult
-
         price = signal.price
 
-        if side == "buy":
-            stop_loss = round(price * (1 - sl_pct / 100), 6)
-            take_profit = round(price * (1 + tp_pct / 100), 6)
+        # --- Pullback-aware SL/TP (smart placement) ---
+        if signal.pullback_price > 0 and signal.spike_price > 0:
+            sl_buffer_pct = 0.15  # 0.15% buffer beyond pullback extreme
+
+            if side == "buy":
+                # SL just below the pullback low (with buffer)
+                stop_loss = round(
+                    signal.pullback_price * (1 - sl_buffer_pct / 100), 6
+                )
+                # TP: best of spike re-test or 2:1 R:R
+                risk = price - stop_loss
+                if risk <= 0:
+                    return None
+                rr_target = price + risk * 2.0
+                spike_target = signal.spike_price
+                take_profit = round(max(rr_target, spike_target), 6)
+            else:
+                # SL just above the pullback high (with buffer)
+                stop_loss = round(
+                    signal.pullback_price * (1 + sl_buffer_pct / 100), 6
+                )
+                # TP: best of spike re-test or 2:1 R:R
+                risk = stop_loss - price
+                if risk <= 0:
+                    return None
+                rr_target = price - risk * 2.0
+                spike_target = signal.spike_price
+                take_profit = round(min(rr_target, spike_target), 6)
+
+            logger.info(
+                f"Pullback SL/TP: {signal.symbol} "
+                f"entry=${price:.4f} SL=${stop_loss:.4f} TP=${take_profit:.4f} "
+                f"R:R={abs(take_profit - price) / abs(price - stop_loss):.1f}:1"
+            )
         else:
-            stop_loss = round(price * (1 + sl_pct / 100), 6)
-            take_profit = round(price * (1 - tp_pct / 100), 6)
+            # Fallback: original fixed percentage SL/TP
+            if signal.strength >= 70:
+                tp_mult = 1.5
+                sl_mult = 0.8
+            else:
+                tp_mult = 1.0
+                sl_mult = 1.0
+
+            tp_pct = self._tp_pct * tp_mult
+            sl_pct = self._sl_pct * sl_mult
+
+            if side == "buy":
+                stop_loss = round(price * (1 - sl_pct / 100), 6)
+                take_profit = round(price * (1 + tp_pct / 100), 6)
+            else:
+                stop_loss = round(price * (1 + sl_pct / 100), 6)
+                take_profit = round(price * (1 - tp_pct / 100), 6)
 
         # Position size based on risk
         risk_amount = self._capital * (self._risk_pct / 100)

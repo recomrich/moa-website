@@ -1,4 +1,15 @@
-"""Price scanner - monitors ALL Hyperliquid assets for spikes."""
+"""Price scanner - monitors ALL Hyperliquid assets for spikes with pullback confirmation.
+
+Strategy: Instead of trading immediately when a spike is detected,
+wait for a pullback (price retrace) and confirmation before entering.
+This avoids buying at the top of a pump or selling at the bottom of a dump.
+
+Flow:
+1. Detect spike (pump or dump) -> create PendingPullback
+2. Wait for price to retrace (pullback)
+3. Confirm price resumes in spike direction (bounce)
+4. THEN emit the signal for trading at a better price
+"""
 
 from __future__ import annotations
 
@@ -19,16 +30,34 @@ class PriceSnapshot:
 
 @dataclass
 class SpikeSignal:
-    """Detected spike opportunity."""
+    """Detected spike opportunity (confirmed after pullback)."""
     symbol: str
     direction: str  # "pump" or "dump"
-    price: float
+    price: float  # entry price (after pullback confirmation)
     change_pct_1m: float
     change_pct_5m: float
     change_pct_15m: float
     spread_pct: float
     strength: int  # 0-100 confidence score
     detected_at: float = field(default_factory=time.time)
+    spike_price: float = 0.0  # peak/trough of the spike (for TP reference)
+    pullback_price: float = 0.0  # extreme of the pullback (for SL reference)
+
+
+@dataclass
+class PendingPullback:
+    """A spike waiting for pullback confirmation before trading."""
+    symbol: str
+    direction: str  # "pump" or "dump"
+    spike_price: float  # peak (pump) or trough (dump) price
+    detected_at: float
+    strength: int
+    change_pct_1m: float
+    change_pct_5m: float
+    change_pct_15m: float
+    pullback_extreme: float = 0.0  # lowest (pump) or highest (dump) since spike
+    pullback_reached: bool = False  # True once min pullback % is reached
+    max_wait_seconds: float = 90.0
 
 
 class PriceScanner:
@@ -37,7 +66,8 @@ class PriceScanner:
     Keeps a rolling window of prices for every asset and detects:
     - Sudden price jumps (pump) or drops (dump)
     - Acceleration (move getting faster)
-    - Volume context via spread analysis
+
+    Then waits for pullback confirmation before emitting a signal.
     """
 
     def __init__(
@@ -48,6 +78,11 @@ class PriceScanner:
         history_minutes: int = 20,
         poll_interval: int = 3,
         blacklist: Optional[list[str]] = None,
+        # Pullback parameters
+        min_pullback_pct: float = 0.3,
+        max_pullback_pct: float = 2.0,
+        confirm_bounce_pct: float = 0.15,
+        max_pullback_wait: float = 90.0,
     ) -> None:
         self._min_spike_1m = min_spike_pct_1m
         self._min_spike_5m = min_spike_pct_5m
@@ -56,24 +91,28 @@ class PriceScanner:
         self._poll_interval = poll_interval
         self._blacklist = set(blacklist or [])
 
+        # Pullback settings
+        self._min_pullback_pct = min_pullback_pct
+        self._max_pullback_pct = max_pullback_pct
+        self._confirm_bounce_pct = confirm_bounce_pct
+        self._max_pullback_wait = max_pullback_wait
+
         # Price history: symbol -> deque of PriceSnapshot
         self._history: dict[str, deque[PriceSnapshot]] = {}
+
+        # Pending pullbacks: symbol -> PendingPullback
+        self._pending_pullbacks: dict[str, PendingPullback] = {}
 
         # Track recently signaled symbols to avoid spam
         self._recent_signals: dict[str, float] = {}
         self._signal_cooldown = 300  # 5 min cooldown per symbol
 
     def update_prices(self, mids: dict[str, str]) -> list[SpikeSignal]:
-        """Update all prices and detect spikes.
+        """Update all prices, detect spikes, and check pullbacks.
 
-        Args:
-            mids: Dict of symbol -> mid price string from Hyperliquid API.
-
-        Returns:
-            List of detected spike signals.
+        Returns only CONFIRMED signals (after pullback) ready for trading.
         """
         now = time.time()
-        signals: list[SpikeSignal] = []
 
         for symbol, price_str in mids.items():
             if symbol in self._blacklist:
@@ -99,8 +138,12 @@ class PriceScanner:
             while history and history[0].timestamp < cutoff:
                 history.popleft()
 
-            # Need at least 30 seconds of data
+            # Need at least ~30 seconds of data
             if len(history) < 5:
+                continue
+
+            # Skip if already watching this symbol for pullback
+            if symbol in self._pending_pullbacks:
                 continue
 
             # Calculate price changes over different windows
@@ -108,14 +151,15 @@ class PriceScanner:
             change_5m = self._calc_change(history, now, 300)
             change_15m = self._calc_change(history, now, 900)
 
-            # Detect spike
-            spike = self._detect_spike(
+            # Detect spike -> creates PendingPullback (NOT a signal yet)
+            self._detect_spike(
                 symbol, price, change_1m, change_5m, change_15m, now
             )
-            if spike:
-                signals.append(spike)
 
-        return signals
+        # Check all pending pullbacks for confirmation
+        confirmed_signals = self._check_pullbacks(mids, now)
+
+        return confirmed_signals
 
     def _calc_change(
         self, history: deque[PriceSnapshot], now: float, window_seconds: int
@@ -151,13 +195,17 @@ class PriceScanner:
         change_5m: float,
         change_15m: float,
         now: float,
-    ) -> Optional[SpikeSignal]:
-        """Check if price changes qualify as a snipeable spike."""
+    ) -> None:
+        """Check if price changes qualify as a spike.
+
+        Instead of returning a signal immediately, creates a PendingPullback
+        that must be confirmed by a price retrace + bounce.
+        """
 
         # Check cooldown
         last_signal = self._recent_signals.get(symbol, 0)
         if now - last_signal < self._signal_cooldown:
-            return None
+            return
 
         # Determine if this is a pump or dump
         is_pump_1m = change_1m >= self._min_spike_1m
@@ -173,7 +221,7 @@ class PriceScanner:
             is_pump_5m, is_dump_5m,
             is_pump_15m, is_dump_15m,
         ]):
-            return None
+            return
 
         # Determine direction - prefer shorter timeframe signals
         if is_pump_1m or is_pump_5m:
@@ -185,34 +233,212 @@ class PriceScanner:
         elif is_dump_15m:
             direction = "dump"
         else:
-            return None
+            return
 
         # Calculate strength (0-100)
         strength = self._calc_strength(
             change_1m, change_5m, change_15m, direction
         )
 
-        # Mark as signaled
+        # Mark cooldown so we don't re-detect the same spike
         self._recent_signals[symbol] = now
 
-        signal = SpikeSignal(
+        # Create pending pullback (wait for confirmation before trading)
+        self._pending_pullbacks[symbol] = PendingPullback(
             symbol=symbol,
             direction=direction,
-            price=price,
+            spike_price=price,
+            detected_at=now,
+            strength=strength,
             change_pct_1m=round(change_1m, 2),
             change_pct_5m=round(change_5m, 2),
             change_pct_15m=round(change_15m, 2),
-            spread_pct=0.0,
-            strength=strength,
+            pullback_extreme=price,  # starts at spike price
+            max_wait_seconds=self._max_pullback_wait,
         )
 
         logger.info(
             f"SPIKE DETECTED: {symbol} {direction.upper()} "
             f"1m={change_1m:+.2f}% 5m={change_5m:+.2f}% "
-            f"15m={change_15m:+.2f}% strength={strength}%"
+            f"15m={change_15m:+.2f}% strength={strength}% "
+            f"-> Waiting for pullback..."
         )
 
-        return signal
+    def _check_pullbacks(
+        self, mids: dict[str, str], now: float
+    ) -> list[SpikeSignal]:
+        """Check all pending pullbacks for confirmation.
+
+        For each pending pullback:
+        - Phase 1: Wait for price to retrace at least min_pullback_pct
+        - Phase 2: Wait for price to bounce back confirm_bounce_pct
+        - Cancel if retrace exceeds max_pullback_pct or timeout
+        """
+        confirmed: list[SpikeSignal] = []
+        expired: list[str] = []
+
+        for symbol, pb in self._pending_pullbacks.items():
+            price_str = mids.get(symbol)
+            if not price_str:
+                continue
+
+            try:
+                price = float(price_str)
+            except (ValueError, TypeError):
+                continue
+
+            # Check timeout
+            if now - pb.detected_at > pb.max_wait_seconds:
+                expired.append(symbol)
+                logger.debug(
+                    f"Pullback timeout: {symbol} "
+                    f"(no confirmation in {pb.max_wait_seconds:.0f}s)"
+                )
+                continue
+
+            if pb.direction == "pump":
+                signal = self._check_pump_pullback(pb, price, expired)
+            else:
+                signal = self._check_dump_pullback(pb, price, expired)
+
+            if signal:
+                confirmed.append(signal)
+
+        # Cleanup expired/confirmed entries
+        for symbol in expired:
+            self._pending_pullbacks.pop(symbol, None)
+
+        return confirmed
+
+    def _check_pump_pullback(
+        self, pb: PendingPullback, price: float, expired: list[str]
+    ) -> Optional[SpikeSignal]:
+        """Check pullback for a pump spike.
+
+        Pump went UP -> wait for price to come DOWN (pullback)
+        -> then bounce back UP (confirmation) -> emit signal to buy LONG.
+        """
+        # Track the lowest point since spike
+        if price < pb.pullback_extreme:
+            pb.pullback_extreme = price
+
+        # How much has price retraced from spike peak?
+        retrace_pct = (
+            (pb.spike_price - pb.pullback_extreme) / pb.spike_price
+        ) * 100
+
+        # Phase 1: waiting for minimum pullback
+        if not pb.pullback_reached:
+            if retrace_pct >= self._min_pullback_pct:
+                pb.pullback_reached = True
+                logger.info(
+                    f"PULLBACK DETECTED: {pb.symbol} dropped "
+                    f"{retrace_pct:.2f}% from peak ${pb.spike_price:.4f}"
+                )
+
+        # Cancel if pullback is too deep (move completely reversed)
+        if retrace_pct >= self._max_pullback_pct:
+            expired.append(pb.symbol)
+            logger.info(
+                f"Pullback too deep ({retrace_pct:.1f}%), "
+                f"signal cancelled: {pb.symbol}"
+            )
+            return None
+
+        # Phase 2: after pullback reached, wait for bounce confirmation
+        if pb.pullback_reached:
+            bounce_pct = (
+                (price - pb.pullback_extreme) / pb.pullback_extreme
+            ) * 100
+
+            if bounce_pct >= self._confirm_bounce_pct:
+                # CONFIRMED! Price pulled back and bounced -> real move
+                expired.append(pb.symbol)
+                logger.info(
+                    f"PULLBACK CONFIRMED: {pb.symbol} LONG "
+                    f"spike=${pb.spike_price:.4f} "
+                    f"low=${pb.pullback_extreme:.4f} "
+                    f"entry=${price:.4f} bounce={bounce_pct:.2f}%"
+                )
+                return SpikeSignal(
+                    symbol=pb.symbol,
+                    direction="pump",
+                    price=price,
+                    change_pct_1m=pb.change_pct_1m,
+                    change_pct_5m=pb.change_pct_5m,
+                    change_pct_15m=pb.change_pct_15m,
+                    spread_pct=0.0,
+                    strength=min(pb.strength + 10, 100),
+                    spike_price=pb.spike_price,
+                    pullback_price=pb.pullback_extreme,
+                )
+
+        return None
+
+    def _check_dump_pullback(
+        self, pb: PendingPullback, price: float, expired: list[str]
+    ) -> Optional[SpikeSignal]:
+        """Check pullback for a dump spike.
+
+        Dump went DOWN -> wait for price to come UP (pullback)
+        -> then drop back DOWN (confirmation) -> emit signal to sell SHORT.
+        """
+        # Track the highest point since spike
+        if price > pb.pullback_extreme:
+            pb.pullback_extreme = price
+
+        # How much has price bounced from spike trough?
+        retrace_pct = (
+            (pb.pullback_extreme - pb.spike_price) / pb.spike_price
+        ) * 100
+
+        # Phase 1: waiting for minimum pullback
+        if not pb.pullback_reached:
+            if retrace_pct >= self._min_pullback_pct:
+                pb.pullback_reached = True
+                logger.info(
+                    f"PULLBACK DETECTED: {pb.symbol} bounced "
+                    f"{retrace_pct:.2f}% from low ${pb.spike_price:.4f}"
+                )
+
+        # Cancel if pullback is too deep (move completely reversed)
+        if retrace_pct >= self._max_pullback_pct:
+            expired.append(pb.symbol)
+            logger.info(
+                f"Pullback too deep ({retrace_pct:.1f}%), "
+                f"signal cancelled: {pb.symbol}"
+            )
+            return None
+
+        # Phase 2: after pullback reached, wait for drop confirmation
+        if pb.pullback_reached:
+            drop_pct = (
+                (pb.pullback_extreme - price) / pb.pullback_extreme
+            ) * 100
+
+            if drop_pct >= self._confirm_bounce_pct:
+                # CONFIRMED! Price bounced and dropped again -> real move
+                expired.append(pb.symbol)
+                logger.info(
+                    f"PULLBACK CONFIRMED: {pb.symbol} SHORT "
+                    f"spike=${pb.spike_price:.4f} "
+                    f"high=${pb.pullback_extreme:.4f} "
+                    f"entry=${price:.4f} drop={drop_pct:.2f}%"
+                )
+                return SpikeSignal(
+                    symbol=pb.symbol,
+                    direction="dump",
+                    price=price,
+                    change_pct_1m=pb.change_pct_1m,
+                    change_pct_5m=pb.change_pct_5m,
+                    change_pct_15m=pb.change_pct_15m,
+                    spread_pct=0.0,
+                    strength=min(pb.strength + 10, 100),
+                    spike_price=pb.spike_price,
+                    pullback_price=pb.pullback_extreme,
+                )
+
+        return None
 
     def _calc_strength(
         self,
@@ -250,6 +476,37 @@ class PriceScanner:
             strength += 5
 
         return min(strength, 100)
+
+    def get_pending_pullbacks(self) -> list[dict]:
+        """Get pending pullbacks for dashboard display."""
+        now = time.time()
+        result = []
+        for symbol, pb in self._pending_pullbacks.items():
+            wait_time = round(now - pb.detected_at)
+            if pb.direction == "pump":
+                retrace = (
+                    (pb.spike_price - pb.pullback_extreme)
+                    / pb.spike_price * 100
+                )
+            else:
+                retrace = (
+                    (pb.pullback_extreme - pb.spike_price)
+                    / pb.spike_price * 100
+                )
+            result.append({
+                "symbol": symbol,
+                "direction": pb.direction,
+                "spike_price": pb.spike_price,
+                "pullback_extreme": pb.pullback_extreme,
+                "retrace_pct": round(retrace, 2),
+                "pullback_reached": pb.pullback_reached,
+                "strength": pb.strength,
+                "wait_time": wait_time,
+                "max_wait": round(pb.max_wait_seconds),
+                "change_1m": pb.change_pct_1m,
+                "change_5m": pb.change_pct_5m,
+            })
+        return result
 
     def get_all_changes(self) -> list[dict]:
         """Get current price changes for all tracked assets (for dashboard)."""
