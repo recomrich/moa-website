@@ -45,20 +45,60 @@ class Position:
 class PositionManager:
     """Manages open positions and monitors stop-loss/take-profit."""
 
-    def __init__(self) -> None:
+    def __init__(self, max_per_symbol: int = 3, cooldown_minutes: int = 30) -> None:
         self._positions: dict[str, Position] = {}
         self._closed_positions: list[dict] = []
+        self._max_per_symbol = max_per_symbol
+        self._cooldown_seconds = cooldown_minutes * 60
+        self._position_counter = 0
+
+    def _next_key(self, symbol: str, strategy_name: str) -> str:
+        """Generate a unique position key."""
+        self._position_counter += 1
+        return f"{symbol}_{strategy_name}_{self._position_counter}"
 
     def open_position(self, position: Position) -> None:
         """Register a new open position."""
-        key = f"{position.symbol}_{position.strategy_name}"
+        key = self._next_key(position.symbol, position.strategy_name)
         position.position_id = key
         self._positions[key] = position
         logger.info(
             f"Position opened: {position.symbol} {position.side.value} "
             f"size={position.size} entry={position.entry_price} "
-            f"SL={position.stop_loss} TP={position.take_profit}"
+            f"SL={position.stop_loss} TP={position.take_profit} "
+            f"(id={key})"
         )
+
+    def can_open_for_symbol(self, symbol: str, strategy_name: str = "") -> bool:
+        """Check if we can open a new position for this symbol.
+
+        Checks:
+        1. Not exceeding max positions per symbol.
+        2. Cooldown since last entry on this symbol+strategy.
+        """
+        # Count open positions for this symbol
+        symbol_count = sum(
+            1 for p in self._positions.values() if p.symbol == symbol
+        )
+        if symbol_count >= self._max_per_symbol:
+            return False
+
+        # Check cooldown: don't open same symbol+strategy too fast
+        if strategy_name:
+            now = time.time()
+            for p in self._positions.values():
+                if (
+                    p.symbol == symbol
+                    and p.strategy_name == strategy_name
+                    and (now - p.opened_at) < self._cooldown_seconds
+                ):
+                    return False
+
+        return True
+
+    def get_symbol_position_count(self, symbol: str) -> int:
+        """Count open positions for a symbol."""
+        return sum(1 for p in self._positions.values() if p.symbol == symbol)
 
     def close_position(
         self, position_id: str, exit_price: float, reason: str = ""

@@ -88,7 +88,12 @@ class TradingBot:
         testnet = os.getenv("HL_TESTNET", "true").lower() == "true"
         self._client = HyperliquidClient(testnet=testnet)
         self._order_manager = OrderManager(self._client, paper_mode=self._paper_mode)
-        self._position_manager = PositionManager()
+        # Position manager: allow multiple positions per crypto
+        risk_cfg_pos = config.get("risk", {})
+        self._position_manager = PositionManager(
+            max_per_symbol=risk_cfg_pos.get("max_positions_per_symbol", 3),
+            cooldown_minutes=risk_cfg_pos.get("cooldown_minutes", 30),
+        )
         self._portfolio = Portfolio(initial_capital=10_000.0)
 
         # Risk
@@ -333,12 +338,13 @@ class TradingBot:
             if not strategy or not strategy.enabled:
                 continue
 
-            # Check if already in position for this symbol+strategy
-            pos_key = f"{symbol}_{strategy_name}"
-            if self._position_manager.get_position(pos_key):
+            # Check if we can open another position on this symbol
+            if not self._position_manager.can_open_for_symbol(
+                symbol, strategy_name
+            ):
                 continue
 
-            # Check risk limits
+            # Check global risk limits
             if not self._risk_manager.can_open_position(
                 self._position_manager.open_count
             ):

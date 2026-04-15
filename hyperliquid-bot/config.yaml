@@ -5,7 +5,9 @@ bot:
 risk:
   max_risk_per_trade_pct: 1.0
   max_drawdown_pct: 10.0
-  max_open_positions: 5
+  max_open_positions: 10
+  max_positions_per_symbol: 3   # max 3 positions ouvertes par crypto
+  cooldown_minutes: 30          # attendre 30min entre 2 trades meme crypto+strategie
   min_reward_risk_ratio: 2.0
 
 trading_pairs:
