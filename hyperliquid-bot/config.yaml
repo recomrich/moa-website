@@ -14,24 +14,24 @@ risk:
 trading_pairs:
   spot:
     - symbol: "BTC"
-      strategies: ["trend_following", "mean_reversion", "breakout"]
+      strategies: ["trend_following", "mean_reversion", "breakout", "swing_range"]
     - symbol: "ETH"
-      strategies: ["trend_following", "mean_reversion", "grid_trading"]
+      strategies: ["trend_following", "mean_reversion", "grid_trading", "swing_range"]
     - symbol: "XRP"
-      strategies: ["trend_following", "mean_reversion", "grid_trading"]
+      strategies: ["trend_following", "mean_reversion", "grid_trading", "swing_range"]
   perps:
     - symbol: "BTC"
       leverage: 5
-      strategies: ["trend_following", "breakout", "scalping"]
+      strategies: ["trend_following", "breakout", "scalping", "swing_range"]
     - symbol: "ETH"
       leverage: 5
-      strategies: ["trend_following", "mean_reversion"]
+      strategies: ["trend_following", "mean_reversion", "swing_range"]
     - symbol: "SOL"
       leverage: 3
-      strategies: ["breakout", "mean_reversion", "grid_trading"]
+      strategies: ["breakout", "mean_reversion", "grid_trading", "swing_range"]
     - symbol: "XRP"
       leverage: 5
-      strategies: ["trend_following", "breakout", "mean_reversion"]
+      strategies: ["trend_following", "breakout", "mean_reversion", "swing_range"]
 
 strategies:
   trend_following:
@@ -63,6 +63,12 @@ strategies:
     grid_levels: 5
     bb_period: 20
     bb_std: 2.0
+  swing_range:
+    enabled: true
+    timeframe: "15m"
+    lookback_days: 30          # analyse les 30 derniers jours
+    entry_zone_pct: 25         # achete dans les 25% bas, vend dans les 25% haut
+    min_daily_range_pct: 2.0   # ignore les cryptos qui bougent moins de 2%/jour
 
 dashboard:
   enabled: true

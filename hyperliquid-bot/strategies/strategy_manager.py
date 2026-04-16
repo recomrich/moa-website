@@ -12,6 +12,7 @@ from strategies.breakout import BreakoutStrategy
 from strategies.grid_trading import GridTradingStrategy
 from strategies.mean_reversion import MeanReversionStrategy
 from strategies.scalping import ScalpingStrategy
+from strategies.swing_range import SwingRangeStrategy
 from strategies.trend_following import TrendFollowingStrategy
 from strategies.regime_detector import RegimeDetector, MarketRegime
 
@@ -21,6 +22,7 @@ STRATEGY_REGISTRY: dict[str, type[BaseStrategy]] = {
     "breakout": BreakoutStrategy,
     "scalping": ScalpingStrategy,
     "grid_trading": GridTradingStrategy,
+    "swing_range": SwingRangeStrategy,
 }
 
 # Higher timeframe for confirmation
