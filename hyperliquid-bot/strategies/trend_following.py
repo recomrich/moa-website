@@ -41,33 +41,24 @@ class TrendFollowingStrategy(BaseStrategy):
         if any(pd.isna(v) for v in [ema_20, ema_50, ema_200, macd_val, macd_signal]):
             return Signal.HOLD
 
-        # BUY: Bullish trend alignment + MACD confirmation
-        if ema_20 > ema_50 > ema_200 and macd_val > macd_signal:
-            # Confirm MACD just crossed above signal (fresh signal)
-            prev_macd = prev.get("MACD", 0)
-            prev_signal = prev.get("MACD_Signal", 0)
-            if not pd.isna(prev_macd) and not pd.isna(prev_signal):
-                if prev_macd <= prev_signal:
-                    self._signal_count += 1
-                    logger.info(
-                        f"[{self.name}] BUY signal - "
-                        f"EMA20={ema_20:.2f} > EMA50={ema_50:.2f} > "
-                        f"EMA200={ema_200:.2f}, MACD crossover"
-                    )
-                    return Signal.BUY
+        # BUY: EMA alignment + MACD above signal (not just crossover)
+        if ema_20 > ema_50 and macd_val > macd_signal:
+            self._signal_count += 1
+            logger.info(
+                f"[{self.name}] BUY signal - "
+                f"EMA20={ema_20:.2f} > EMA50={ema_50:.2f}, "
+                f"MACD={macd_val:.4f} > Signal={macd_signal:.4f}"
+            )
+            return Signal.BUY
 
-        # SELL: Bearish alignment + MACD confirmation
+        # SELL: Bearish alignment + MACD below signal
         if ema_20 < ema_50 and macd_val < macd_signal:
-            prev_macd = prev.get("MACD", 0)
-            prev_signal = prev.get("MACD_Signal", 0)
-            if not pd.isna(prev_macd) and not pd.isna(prev_signal):
-                if prev_macd >= prev_signal:
-                    self._signal_count += 1
-                    logger.info(
-                        f"[{self.name}] SELL signal - "
-                        f"EMA20={ema_20:.2f} < EMA50={ema_50:.2f}, "
-                        f"MACD cross below"
-                    )
-                    return Signal.SELL
+            self._signal_count += 1
+            logger.info(
+                f"[{self.name}] SELL signal - "
+                f"EMA20={ema_20:.2f} < EMA50={ema_50:.2f}, "
+                f"MACD={macd_val:.4f} < Signal={macd_signal:.4f}"
+            )
+            return Signal.SELL
 
         return Signal.HOLD

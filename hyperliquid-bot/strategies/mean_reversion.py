@@ -36,34 +36,38 @@ class MeanReversionStrategy(BaseStrategy):
         bb = bollinger_bands(df, self._bb_period, self._bb_std)
         data["BB_Upper"] = bb["BB_Upper"]
         data["BB_Lower"] = bb["BB_Lower"]
+        data["BB_Middle"] = bb["BB_Middle"]
 
         latest = data.iloc[-1]
         current_rsi = latest.get("RSI")
         current_close = latest.get("close")
         bb_lower = latest.get("BB_Lower")
         bb_upper = latest.get("BB_Upper")
+        bb_middle = latest.get("BB_Middle")
 
         if any(pd.isna(v) for v in [current_rsi, current_close, bb_lower, bb_upper]):
             return Signal.HOLD
 
-        # BUY: Oversold + below lower band
-        if current_rsi < self._rsi_oversold and current_close < bb_lower:
-            self._signal_count += 1
-            logger.info(
-                f"[{self.name}] BUY signal - "
-                f"RSI={current_rsi:.1f} < {self._rsi_oversold}, "
-                f"price={current_close:.2f} < BB_Lower={bb_lower:.2f}"
-            )
-            return Signal.BUY
+        # BUY: RSI oversold OR price below lower band
+        if current_rsi < self._rsi_oversold or current_close < bb_lower:
+            if current_rsi < self._rsi_oversold + 5:  # RSI at least near oversold
+                self._signal_count += 1
+                logger.info(
+                    f"[{self.name}] BUY signal - "
+                    f"RSI={current_rsi:.1f}, "
+                    f"price={current_close:.2f}, BB_Lower={bb_lower:.2f}"
+                )
+                return Signal.BUY
 
-        # SELL: Overbought + above upper band
-        if current_rsi > self._rsi_overbought and current_close > bb_upper:
-            self._signal_count += 1
-            logger.info(
-                f"[{self.name}] SELL signal - "
-                f"RSI={current_rsi:.1f} > {self._rsi_overbought}, "
-                f"price={current_close:.2f} > BB_Upper={bb_upper:.2f}"
-            )
-            return Signal.SELL
+        # SELL: RSI overbought OR price above upper band
+        if current_rsi > self._rsi_overbought or current_close > bb_upper:
+            if current_rsi > self._rsi_overbought - 5:  # RSI at least near overbought
+                self._signal_count += 1
+                logger.info(
+                    f"[{self.name}] SELL signal - "
+                    f"RSI={current_rsi:.1f}, "
+                    f"price={current_close:.2f}, BB_Upper={bb_upper:.2f}"
+                )
+                return Signal.SELL
 
         return Signal.HOLD

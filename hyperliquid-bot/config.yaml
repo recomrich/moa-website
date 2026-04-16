@@ -1,28 +1,31 @@
 bot:
   mode: "paper"  # "paper" (simulation) or "live" (real trading)
-  update_interval: 5  # seconds between each analysis cycle
+  update_interval: 5  # seconds entre chaque cycle
 
 risk:
-  max_risk_per_trade_pct: 1.0
-  max_drawdown_pct: 10.0
+  max_risk_per_trade_pct: 1.5     # risquer 1.5% par trade
+  max_drawdown_pct: 15.0          # drawdown max avant arret
   max_open_positions: 10
-  max_positions_per_symbol: 3   # max 3 positions ouvertes par crypto
-  cooldown_minutes: 30          # attendre 30min entre 2 trades meme crypto+strategie
-  max_leverage: 20              # levier max pour signaux forts (85%+ confiance)
-  min_reward_risk_ratio: 2.0
+  max_positions_per_symbol: 3
+  cooldown_minutes: 15            # 15 min entre trades (etait 30)
+  max_leverage: 20
+  min_reward_risk_ratio: 1.5      # R:R 1.5 au lieu de 2.0 (plus de trades)
 
 trading_pairs:
   spot:
     - symbol: "BTC"
-      strategies: ["trend_following", "breakout"]
+      strategies: ["trend_following", "mean_reversion", "breakout"]
     - symbol: "ETH"
-      strategies: ["mean_reversion", "grid_trading"]
+      strategies: ["trend_following", "mean_reversion", "grid_trading"]
     - symbol: "XRP"
       strategies: ["trend_following", "mean_reversion", "grid_trading"]
   perps:
     - symbol: "BTC"
       leverage: 5
-      strategies: ["trend_following", "scalping"]
+      strategies: ["trend_following", "breakout", "scalping"]
+    - symbol: "ETH"
+      leverage: 5
+      strategies: ["trend_following", "mean_reversion"]
     - symbol: "SOL"
       leverage: 3
       strategies: ["breakout", "mean_reversion", "grid_trading"]
@@ -33,22 +36,22 @@ trading_pairs:
 strategies:
   trend_following:
     enabled: true
-    timeframe: "1h"
+    timeframe: "15m"        # etait 1h -> 15min pour trades plus courts
     ema_periods: [20, 50, 200]
   mean_reversion:
     enabled: true
     timeframe: "15m"
-    rsi_oversold: 30
-    rsi_overbought: 70
+    rsi_oversold: 35        # etait 30 -> detecte plus tot
+    rsi_overbought: 65      # etait 70 -> detecte plus tot
     bb_period: 20
     bb_std: 2.0
   breakout:
     enabled: true
-    timeframe: "1h"
-    volume_multiplier: 1.5
-    lookback_period: 20
+    timeframe: "15m"        # etait 1h -> 15min
+    volume_multiplier: 1.3  # etait 1.5 -> moins de volume requis
+    lookback_period: 15     # etait 20 -> fenetre plus courte
   scalping:
-    enabled: false
+    enabled: true           # ACTIVE maintenant
     timeframe: "5m"
     ema_fast: 5
     ema_slow: 13

@@ -98,24 +98,26 @@ class StrategyManager:
         if signal is None or signal == Signal.HOLD:
             return signal, 0
 
-        # Start confidence at 30 (basic signal)
-        confidence = 30
+        # Start confidence at 40 (basic signal is enough to trade)
+        confidence = 40
 
-        # Regime check: is this strategy suitable for current conditions?
+        # Regime check: SOFT filter - reduces confidence but does NOT block
         regime = None
         if symbol and not df.empty:
             regime = self._regime_detector.detect(df, symbol)
             recommended = self._regime_detector.get_recommended_strategies(regime)
-            if strategy_name not in recommended:
+            if strategy_name in recommended:
+                # Regime matches strategy: +20 confidence
+                confidence += 20
+            else:
+                # Regime mismatch: reduce confidence but still allow trade
+                confidence -= 10
                 logger.debug(
-                    f"[{strategy_name}] Signal {signal.value} ignored - "
-                    f"regime {regime.value} favors {recommended}"
+                    f"[{strategy_name}] Regime {regime.value} not ideal "
+                    f"(-10 confidence), favors {recommended}"
                 )
-                return Signal.HOLD, 0
-            # Regime matches strategy: +20 confidence
-            confidence += 20
 
-        # Multi-timeframe confirmation
+        # Multi-timeframe confirmation: SOFT filter - adjusts confidence
         htf_confirmed = False
         if higher_tf_df is not None and not higher_tf_df.empty:
             from indicators.trend import ema
@@ -127,25 +129,20 @@ class StrategyManager:
             if not htf_ema20.empty and not htf_ema50.empty:
                 htf_trend_up = htf_ema20.iloc[-1] > htf_ema50.iloc[-1]
 
-                if signal == Signal.BUY and not htf_trend_up:
-                    logger.info(
-                        f"[{strategy_name}] BUY rejected - "
-                        f"higher timeframe trend is bearish"
+                if signal == Signal.BUY and htf_trend_up:
+                    confidence += 20
+                    htf_confirmed = True
+                elif signal == Signal.SELL and not htf_trend_up:
+                    confidence += 20
+                    htf_confirmed = True
+                else:
+                    # HTF disagrees: reduce confidence but allow trade
+                    confidence -= 10
+                    logger.debug(
+                        f"[{strategy_name}] Higher TF disagrees (-10 confidence)"
                     )
-                    return Signal.HOLD, 0
 
-                if signal == Signal.SELL and htf_trend_up:
-                    logger.info(
-                        f"[{strategy_name}] SELL rejected - "
-                        f"higher timeframe trend is bullish"
-                    )
-                    return Signal.HOLD, 0
-
-                # Higher TF confirms: +20 confidence
-                confidence += 20
-                htf_confirmed = True
-
-        # Momentum & volume bonus: RSI not extreme + strong candle
+        # Momentum & volume bonus
         if not df.empty and len(df) > 20:
             from indicators.momentum import rsi as calc_rsi
             from indicators.volume import obv
@@ -153,13 +150,11 @@ class StrategyManager:
             rsi_values = calc_rsi(df)
             if not rsi_values.empty and not pd.isna(rsi_values.iloc[-1]):
                 rsi_val = rsi_values.iloc[-1]
-                # RSI in strong zone (not overbought/oversold extreme)
-                if signal == Signal.BUY and 40 < rsi_val < 65:
+                if signal == Signal.BUY and 30 < rsi_val < 70:
                     confidence += 10
-                elif signal == Signal.SELL and 35 < rsi_val < 60:
+                elif signal == Signal.SELL and 30 < rsi_val < 70:
                     confidence += 10
 
-            # Volume increasing (OBV rising)
             obv_values = obv(df)
             if len(obv_values) > 5:
                 obv_trend = obv_values.iloc[-1] > obv_values.iloc[-5]
