@@ -11,10 +11,13 @@
 
 <!-- Header -->
 <header class="header">
-    <h1>&#x1F916; Hyperliquid Trading Bot</h1>
+    <div class="header-left">
+        <div class="logo">HL</div>
+        <h1>Hyper<span>liquid</span> Bot</h1>
+    </div>
     <div class="header-stats">
         <div class="stat-item">
-            <div class="stat-label">Portfolio Value</div>
+            <div class="stat-label">Portfolio</div>
             <div class="stat-value" id="portfolio-value">$0.00</div>
         </div>
         <div class="stat-item">
@@ -22,12 +25,8 @@
             <div class="stat-value" id="daily-pnl">$0.00</div>
         </div>
         <div class="stat-item">
-            <div class="stat-label">Daily PnL %</div>
+            <div class="stat-label">Daily %</div>
             <div class="stat-value" id="daily-pnl-pct">0.00%</div>
-        </div>
-        <div class="stat-item">
-            <div class="stat-label">Open Positions</div>
-            <div class="stat-value" id="open-positions">0</div>
         </div>
         <div class="stat-item">
             <span class="status-badge active" id="bot-status">
@@ -38,24 +37,67 @@
     </div>
 </header>
 
+<!-- Stat Cards Row -->
+<div class="stats-row">
+    <div class="stat-card">
+        <div class="icon purple">&#9672;</div>
+        <div class="card-label">Open Positions</div>
+        <div class="card-value" id="open-positions">0</div>
+        <div class="card-sub" id="positions-sub">0 long / 0 short</div>
+    </div>
+    <div class="stat-card">
+        <div class="icon green">&#9650;</div>
+        <div class="card-label">Total PnL</div>
+        <div class="card-value" id="total-pnl">$0.00</div>
+        <div class="card-sub" id="total-pnl-sub">all time</div>
+    </div>
+    <div class="stat-card">
+        <div class="icon blue">&#9679;</div>
+        <div class="card-label">Win Rate</div>
+        <div class="card-value" id="win-rate">0%</div>
+        <div class="card-sub" id="win-rate-sub">0W / 0L</div>
+    </div>
+    <div class="stat-card">
+        <div class="icon orange">&#9733;</div>
+        <div class="card-label">Total Trades</div>
+        <div class="card-value" id="total-trades">0</div>
+        <div class="card-sub" id="total-trades-sub">today: 0</div>
+    </div>
+    <div class="stat-card">
+        <div class="icon red">&#9888;</div>
+        <div class="card-label">Drawdown</div>
+        <div class="card-value" id="drawdown">0.0%</div>
+        <div class="card-sub" id="drawdown-sub">max: 0.0%</div>
+    </div>
+</div>
+
 <!-- Main Content -->
 <main class="main">
     <!-- Charts -->
     <div class="chart-section">
         <div class="card">
-            <div class="card-title">Equity Curve</div>
+            <div class="card-header">
+                <div class="card-title">Equity Curve</div>
+                <div class="card-badge" id="equity-badge">Live</div>
+            </div>
             <div class="chart-container" id="equity-chart"></div>
         </div>
         <div class="card">
-            <div class="card-title">Price Chart</div>
+            <div class="card-header">
+                <div class="card-title">Price Chart</div>
+                <div class="card-badge" id="price-badge">BTC</div>
+            </div>
             <div class="chart-container" id="price-chart"></div>
         </div>
     </div>
 
     <!-- Open Positions -->
     <div class="card">
-        <div class="card-title">Open Positions</div>
-        <div style="overflow-x: auto;">
+        <div class="card-header">
+            <div class="card-title">Open Positions</div>
+            <div class="card-badge" id="positions-count">0</div>
+        </div>
+        <div style="overflow-x: auto; max-height: 400px;">
             <table>
                 <thead>
                     <tr>
@@ -63,15 +105,16 @@
                         <th>Side</th>
                         <th>Size</th>
                         <th>Entry</th>
+                        <th>Current</th>
                         <th>PnL</th>
                         <th>PnL %</th>
-                        <th>Leverage</th>
+                        <th>Lev</th>
                         <th>SL / TP</th>
                         <th>Strategy</th>
                     </tr>
                 </thead>
                 <tbody id="positions-table">
-                    <tr><td colspan="9" style="text-align:center;opacity:0.5;">No open positions</td></tr>
+                    <tr><td colspan="10" class="empty-state">No open positions</td></tr>
                 </tbody>
             </table>
         </div>
@@ -79,8 +122,11 @@
 
     <!-- Recent Trades -->
     <div class="card">
-        <div class="card-title">Recent Trades</div>
-        <div style="overflow-x: auto;">
+        <div class="card-header">
+            <div class="card-title">Recent Trades</div>
+            <div class="card-badge" id="trades-count">0</div>
+        </div>
+        <div style="overflow-x: auto; max-height: 400px;">
             <table>
                 <thead>
                     <tr>
@@ -95,7 +141,7 @@
                     </tr>
                 </thead>
                 <tbody id="trades-table">
-                    <tr><td colspan="8" style="text-align:center;opacity:0.5;">No trades yet</td></tr>
+                    <tr><td colspan="8" class="empty-state">No trades yet</td></tr>
                 </tbody>
             </table>
         </div>
@@ -103,12 +149,20 @@
 
     <!-- Strategies -->
     <div class="card" style="grid-column: 1 / -1;">
-        <div class="card-title">Strategies</div>
+        <div class="card-header">
+            <div class="card-title">Active Strategies</div>
+            <div class="card-badge" id="strategies-count">0</div>
+        </div>
         <div class="strategy-grid" id="strategies-grid">
-            <div style="opacity:0.5;">Loading strategies...</div>
+            <div class="empty-state">Loading strategies...</div>
         </div>
     </div>
 </main>
+
+<!-- Footer -->
+<footer class="footer">
+    Hyperliquid Trading Bot &mdash; Built with <span>&hearts;</span> &mdash; Real-time data via WebSocket
+</footer>
 
 <script src="/static/app.js"></script>
 </body>

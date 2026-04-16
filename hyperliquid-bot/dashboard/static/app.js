@@ -1,9 +1,7 @@
 /**
- * Hyperliquid Trading Bot - Dashboard Application
- * Real-time WebSocket updates + REST API polling
+ * Hyperliquid Trading Bot - Premium Dashboard
  */
 
-// --- State ---
 let ws = null;
 let equityChart = null;
 let equitySeries = null;
@@ -22,7 +20,6 @@ function connectWebSocket() {
     ws = new WebSocket(url);
 
     ws.onopen = () => {
-        console.log('WebSocket connected');
         reconnectAttempts = 0;
         updateBotStatus('active', 'Connected');
     };
@@ -32,19 +29,16 @@ function connectWebSocket() {
             const msg = JSON.parse(event.data);
             handleWSMessage(msg.event, msg.data);
         } catch (e) {
-            console.error('Failed to parse WS message:', e);
+            console.error('WS parse error:', e);
         }
     };
 
     ws.onclose = () => {
-        console.log('WebSocket disconnected');
         updateBotStatus('error', 'Disconnected');
         scheduleReconnect();
     };
 
-    ws.onerror = () => {
-        ws.close();
-    };
+    ws.onerror = () => { ws.close(); };
 }
 
 function scheduleReconnect() {
@@ -56,36 +50,24 @@ function scheduleReconnect() {
 
 function handleWSMessage(event, data) {
     switch (event) {
-        case 'status':
-            updateStatusDisplay(data);
-            break;
-        case 'positions':
-            renderPositions(data);
-            break;
-        case 'trades':
-            renderTrades(data);
-            break;
-        case 'strategies':
-            renderStrategies(data);
-            break;
-        case 'equity':
-            updateEquityChart(data);
-            break;
-        case 'prices':
-            updatePrices(data);
-            break;
+        case 'status': updateStatusDisplay(data); break;
+        case 'positions': renderPositions(data); break;
+        case 'trades': renderTrades(data); break;
+        case 'strategies': renderStrategies(data); break;
+        case 'equity': updateEquityChart(data); break;
+        case 'prices': updatePrices(data); break;
     }
 }
 
-// --- REST API Polling ---
+// --- REST API ---
 
-async function fetchAPI(endpoint) {
+async function fetchAPI(endpoint, options = {}) {
     try {
-        const res = await fetch(endpoint);
+        const res = await fetch(endpoint, options);
         if (!res.ok) return null;
         return await res.json();
     } catch (e) {
-        console.error(`API fetch error (${endpoint}):`, e);
+        console.error(`API error (${endpoint}):`, e);
         return null;
     }
 }
@@ -111,12 +93,13 @@ async function pollData() {
 function updateBotStatus(state, text) {
     const badge = document.getElementById('bot-status');
     const statusText = document.getElementById('bot-status-text');
-    badge.className = `status-badge ${state}`;
-    statusText.textContent = text;
+    if (badge) badge.className = `status-badge ${state}`;
+    if (statusText) statusText.textContent = text;
 }
 
 function updateStatusDisplay(data) {
     const portfolio = data.portfolio || {};
+    const risk = data.risk || {};
 
     setText('portfolio-value', `$${formatNum(portfolio.total_value || 0)}`);
 
@@ -124,6 +107,15 @@ function updateStatusDisplay(data) {
     const dailyPnlPct = portfolio.daily_pnl_pct || 0;
     setTextWithColor('daily-pnl', `$${formatNum(dailyPnl, true)}`, dailyPnl);
     setTextWithColor('daily-pnl-pct', `${formatNum(dailyPnlPct, true)}%`, dailyPnlPct);
+
+    // Stat cards
+    const totalPnl = portfolio.total_pnl || 0;
+    setTextWithColor('total-pnl', `$${formatNum(totalPnl, true)}`, totalPnl);
+
+    const drawdown = risk.current_drawdown || 0;
+    const maxDrawdown = risk.max_drawdown || 0;
+    setText('drawdown', `${Math.abs(drawdown).toFixed(1)}%`);
+    setText('drawdown-sub', `max: ${Math.abs(maxDrawdown).toFixed(1)}%`);
 
     const running = data.running;
     if (running) {
@@ -136,79 +128,131 @@ function updateStatusDisplay(data) {
 function renderPositions(positions) {
     const tbody = document.getElementById('positions-table');
     if (!positions || positions.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;opacity:0.5;">No open positions</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No open positions</td></tr>';
         setText('open-positions', '0');
+        setText('positions-count', '0');
+        setText('positions-sub', '0 long / 0 short');
         return;
     }
 
-    setText('open-positions', positions.length.toString());
-    tbody.innerHTML = positions.map(p => `
-        <tr>
-            <td><strong>${p.symbol}</strong></td>
-            <td style="color: ${p.side === 'buy' ? 'var(--green)' : 'var(--red)'}">${p.side.toUpperCase()}</td>
+    const count = positions.length;
+    const longs = positions.filter(p => p.side === 'buy').length;
+    const shorts = count - longs;
+
+    setText('open-positions', count.toString());
+    setText('positions-count', count.toString());
+    setText('positions-sub', `${longs} long / ${shorts} short`);
+
+    tbody.innerHTML = positions.map(p => {
+        const sideClass = p.side === 'buy' ? 'side-buy' : 'side-sell';
+        const sideText = p.side === 'buy' ? 'LONG' : 'SHORT';
+        const pnlClass = p.unrealized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+        const pctClass = p.pnl_pct >= 0 ? 'pnl-positive' : 'pnl-negative';
+
+        return `<tr>
+            <td><span class="symbol-name">${p.symbol}</span></td>
+            <td><span class="${sideClass}">${sideText}</span></td>
             <td>${p.size}</td>
             <td>${formatPrice(p.entry_price)}</td>
-            <td class="${p.unrealized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}">${formatNum(p.unrealized_pnl, true)}</td>
-            <td class="${p.pnl_pct >= 0 ? 'pnl-positive' : 'pnl-negative'}">${formatNum(p.pnl_pct, true)}%</td>
-            <td>${p.leverage}x</td>
+            <td>${formatPrice(p.current_price)}</td>
+            <td class="${pnlClass}">$${formatNum(p.unrealized_pnl, true)}</td>
+            <td class="${pctClass}">${formatNum(p.pnl_pct, true)}%</td>
+            <td><span class="leverage-badge">${p.leverage}x</span></td>
             <td>${formatPrice(p.stop_loss)} / ${formatPrice(p.take_profit)}</td>
-            <td>${p.strategy || '-'}</td>
-        </tr>
-    `).join('');
+            <td><span class="strategy-tag">${formatStrategy(p.strategy)}</span></td>
+        </tr>`;
+    }).join('');
 }
 
 function renderTrades(trades) {
     const tbody = document.getElementById('trades-table');
     if (!trades || trades.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;opacity:0.5;">No trades yet</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No trades yet</td></tr>';
+        setText('trades-count', '0');
         return;
     }
 
-    tbody.innerHTML = trades.slice(0, 20).map(t => `
-        <tr>
-            <td><strong>${t.symbol}</strong></td>
-            <td style="color: ${t.side === 'buy' ? 'var(--green)' : 'var(--red)'}">${t.side.toUpperCase()}</td>
+    const displayed = trades.slice(0, 30);
+    setText('trades-count', trades.length.toString());
+
+    // Update win rate card
+    const wins = trades.filter(t => (t.pnl || 0) > 0).length;
+    const losses = trades.filter(t => (t.pnl || 0) < 0).length;
+    const total = wins + losses;
+    const winRate = total > 0 ? Math.round((wins / total) * 100) : 0;
+    setText('win-rate', `${winRate}%`);
+    setText('win-rate-sub', `${wins}W / ${losses}L`);
+    setText('total-trades', total.toString());
+
+    // Color the win rate
+    const wrEl = document.getElementById('win-rate');
+    if (wrEl) {
+        wrEl.className = 'card-value' + (winRate >= 50 ? ' positive' : winRate > 0 ? ' negative' : '');
+    }
+
+    tbody.innerHTML = displayed.map(t => {
+        const sideClass = t.side === 'buy' ? 'side-buy' : 'side-sell';
+        const sideText = t.side === 'buy' ? 'LONG' : 'SHORT';
+        const pnl = t.pnl || 0;
+        const pnlPct = t.pnl_pct || 0;
+        const pnlClass = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+        const reason = t.close_reason || t.reason || '-';
+        const reasonClass = getReasonClass(reason);
+
+        return `<tr>
+            <td><span class="symbol-name">${t.symbol}</span></td>
+            <td><span class="${sideClass}">${sideText}</span></td>
             <td>${formatPrice(t.entry_price)}</td>
             <td>${formatPrice(t.exit_price)}</td>
-            <td class="${t.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}">${formatNum(t.pnl, true)}</td>
-            <td class="${(t.pnl_pct || 0) >= 0 ? 'pnl-positive' : 'pnl-negative'}">${formatNum(t.pnl_pct || 0, true)}%</td>
-            <td>${t.strategy || '-'}</td>
-            <td>${t.close_reason || t.reason || '-'}</td>
-        </tr>
-    `).join('');
+            <td class="${pnlClass}">$${formatNum(pnl, true)}</td>
+            <td class="${pnlClass}">${formatNum(pnlPct, true)}%</td>
+            <td><span class="strategy-tag">${formatStrategy(t.strategy)}</span></td>
+            <td><span class="reason-tag ${reasonClass}">${reason}</span></td>
+        </tr>`;
+    }).join('');
 }
 
 function renderStrategies(strategies) {
     const grid = document.getElementById('strategies-grid');
     if (!strategies || strategies.length === 0) {
-        grid.innerHTML = '<div style="opacity:0.5;">No strategies loaded</div>';
+        grid.innerHTML = '<div class="empty-state">No strategies loaded</div>';
+        setText('strategies-count', '0');
         return;
     }
 
-    grid.innerHTML = strategies.map(s => `
-        <div class="strategy-card">
-            <div class="name">${s.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</div>
+    setText('strategies-count', strategies.length.toString());
+
+    grid.innerHTML = strategies.map(s => {
+        const wr = s.win_rate || 0;
+        const wrBarClass = wr >= 55 ? 'good' : wr >= 45 ? 'mid' : 'bad';
+        const name = formatStrategy(s.name);
+
+        return `<div class="strategy-card">
+            <div class="name">${name}</div>
             <div class="metric">
                 <span>Timeframe</span>
                 <span>${s.timeframe}</span>
             </div>
             <div class="metric">
                 <span>Signals</span>
-                <span>${s.signals_generated}</span>
+                <span>${s.signals_generated || 0}</span>
             </div>
             <div class="metric">
                 <span>Win Rate</span>
-                <span style="color: ${s.win_rate >= 50 ? 'var(--green)' : 'var(--text-primary)'}">${s.win_rate}%</span>
+                <span style="color: ${wr >= 50 ? 'var(--green)' : 'var(--text-primary)'}">${wr}%</span>
             </div>
             <div class="metric">
                 <span>W / L</span>
-                <span>${s.wins} / ${s.losses}</span>
+                <span>${s.wins || 0} / ${s.losses || 0}</span>
+            </div>
+            <div class="winrate-bar">
+                <div class="fill ${wrBarClass}" style="width: ${wr}%"></div>
             </div>
             <button class="toggle-btn ${s.enabled ? 'active' : ''}" onclick="toggleStrategy('${s.name}')">
                 ${s.enabled ? 'Enabled' : 'Disabled'}
             </button>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 async function toggleStrategy(name) {
@@ -217,67 +261,74 @@ async function toggleStrategy(name) {
     if (strategies) renderStrategies(strategies);
 }
 
-// Override fetchAPI for POST
-async function fetchAPI(endpoint, options = {}) {
-    try {
-        const res = await fetch(endpoint, options);
-        if (!res.ok) return null;
-        return await res.json();
-    } catch (e) {
-        console.error(`API error (${endpoint}):`, e);
-        return null;
-    }
-}
-
 // --- Charts ---
 
 function initCharts() {
-    // Equity chart
     const equityContainer = document.getElementById('equity-chart');
     if (equityContainer && window.LightweightCharts) {
         equityChart = LightweightCharts.createChart(equityContainer, {
             width: equityContainer.clientWidth,
-            height: 280,
-            layout: { background: { color: '#1a1e2e' }, textColor: '#c5c6c7' },
-            grid: { vertLines: { color: '#2a2f42' }, horzLines: { color: '#2a2f42' } },
-            timeScale: { timeVisible: true, borderColor: '#2a2f42' },
-            rightPriceScale: { borderColor: '#2a2f42' },
+            height: 290,
+            layout: {
+                background: { color: '#141620' },
+                textColor: '#8b8fa3',
+                fontFamily: "'Inter', sans-serif",
+            },
+            grid: {
+                vertLines: { color: 'rgba(255,255,255,0.04)' },
+                horzLines: { color: 'rgba(255,255,255,0.04)' },
+            },
+            timeScale: { timeVisible: true, borderColor: 'rgba(255,255,255,0.06)' },
+            rightPriceScale: { borderColor: 'rgba(255,255,255,0.06)' },
+            crosshair: {
+                vertLine: { color: 'rgba(99,102,241,0.3)', width: 1, style: 2 },
+                horzLine: { color: 'rgba(99,102,241,0.3)', width: 1, style: 2 },
+            },
         });
         equitySeries = equityChart.addAreaSeries({
-            lineColor: '#66fcf1',
-            topColor: 'rgba(102, 252, 241, 0.3)',
-            bottomColor: 'rgba(102, 252, 241, 0.0)',
+            lineColor: '#6366f1',
+            topColor: 'rgba(99, 102, 241, 0.28)',
+            bottomColor: 'rgba(99, 102, 241, 0.0)',
             lineWidth: 2,
         });
     }
 
-    // Price chart
     const priceContainer = document.getElementById('price-chart');
     if (priceContainer && window.LightweightCharts) {
         priceChart = LightweightCharts.createChart(priceContainer, {
             width: priceContainer.clientWidth,
-            height: 280,
-            layout: { background: { color: '#1a1e2e' }, textColor: '#c5c6c7' },
-            grid: { vertLines: { color: '#2a2f42' }, horzLines: { color: '#2a2f42' } },
-            timeScale: { timeVisible: true, borderColor: '#2a2f42' },
-            rightPriceScale: { borderColor: '#2a2f42' },
+            height: 290,
+            layout: {
+                background: { color: '#141620' },
+                textColor: '#8b8fa3',
+                fontFamily: "'Inter', sans-serif",
+            },
+            grid: {
+                vertLines: { color: 'rgba(255,255,255,0.04)' },
+                horzLines: { color: 'rgba(255,255,255,0.04)' },
+            },
+            timeScale: { timeVisible: true, borderColor: 'rgba(255,255,255,0.06)' },
+            rightPriceScale: { borderColor: 'rgba(255,255,255,0.06)' },
+            crosshair: {
+                vertLine: { color: 'rgba(99,102,241,0.3)', width: 1, style: 2 },
+                horzLine: { color: 'rgba(99,102,241,0.3)', width: 1, style: 2 },
+            },
         });
         priceSeries = priceChart.addCandlestickSeries({
-            upColor: '#00e676',
-            downColor: '#ff5252',
-            borderUpColor: '#00e676',
-            borderDownColor: '#ff5252',
-            wickUpColor: '#00e676',
-            wickDownColor: '#ff5252',
+            upColor: '#22c55e',
+            downColor: '#ef4444',
+            borderUpColor: '#22c55e',
+            borderDownColor: '#ef4444',
+            wickUpColor: '#22c55e',
+            wickDownColor: '#ef4444',
         });
     }
 
-    // Resize handler
     window.addEventListener('resize', () => {
-        if (equityChart) {
+        if (equityChart && equityContainer) {
             equityChart.applyOptions({ width: equityContainer.clientWidth });
         }
-        if (priceChart) {
+        if (priceChart && priceContainer) {
             priceChart.applyOptions({ width: priceContainer.clientWidth });
         }
     });
@@ -297,7 +348,7 @@ function updateEquityChart(data) {
 }
 
 function updatePrices(pricesData) {
-    // Price data updates handled via WS
+    // Handled via WS
 }
 
 // --- Helpers ---
@@ -327,6 +378,19 @@ function formatNum(n, signed = false) {
 function formatPrice(p) {
     if (p === null || p === undefined) return '-';
     return typeof p === 'number' ? p.toLocaleString('en-US', { maximumFractionDigits: 6 }) : p;
+}
+
+function formatStrategy(name) {
+    if (!name || name === '-') return '-';
+    return name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function getReasonClass(reason) {
+    if (!reason) return 'other';
+    const r = reason.toLowerCase();
+    if (r.includes('tp') || r.includes('take') || r.includes('profit') || r.includes('target')) return 'tp';
+    if (r.includes('sl') || r.includes('stop') || r.includes('loss')) return 'sl';
+    return 'other';
 }
 
 // --- Init ---
