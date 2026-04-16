@@ -32,6 +32,9 @@ trading_pairs:
     - symbol: "XRP"
       leverage: 5
       strategies: ["trend_following", "breakout", "mean_reversion", "swing_range"]
+    - symbol: "IO"
+      leverage: 5
+      strategies: ["mean_reversion", "grid_trading", "swing_range"]
 
 strategies:
   trend_following:
