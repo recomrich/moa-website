@@ -96,9 +96,9 @@ class RegimeDetector:
     def get_recommended_strategies(self, regime: MarketRegime) -> list[str]:
         """Get recommended strategies for a market regime."""
         recommendations = {
-            MarketRegime.TRENDING_UP: ["trend_following", "breakout", "momentum", "swing_range"],
-            MarketRegime.TRENDING_DOWN: ["trend_following", "mean_reversion", "momentum", "swing_range"],
-            MarketRegime.RANGING: ["mean_reversion", "grid_trading", "scalping", "swing_range"],
-            MarketRegime.VOLATILE: ["momentum", "breakout", "scalping", "swing_range"],
+            MarketRegime.TRENDING_UP: ["trend_following", "breakout", "momentum", "cycle_trader", "swing_range"],
+            MarketRegime.TRENDING_DOWN: ["trend_following", "mean_reversion", "momentum", "cycle_trader", "swing_range"],
+            MarketRegime.RANGING: ["cycle_trader", "mean_reversion", "grid_trading", "scalping", "swing_range"],
+            MarketRegime.VOLATILE: ["cycle_trader", "momentum", "breakout", "scalping", "swing_range"],
         }
         return recommendations.get(regime, [])

@@ -9,6 +9,7 @@ from loguru import logger
 
 from strategies.base_strategy import BaseStrategy, Signal
 from strategies.breakout import BreakoutStrategy
+from strategies.cycle_trader import CycleTraderStrategy
 from strategies.grid_trading import GridTradingStrategy
 from strategies.mean_reversion import MeanReversionStrategy
 from strategies.momentum import MomentumStrategy
@@ -25,6 +26,7 @@ STRATEGY_REGISTRY: dict[str, type[BaseStrategy]] = {
     "grid_trading": GridTradingStrategy,
     "swing_range": SwingRangeStrategy,
     "momentum": MomentumStrategy,
+    "cycle_trader": CycleTraderStrategy,
 }
 
 # Higher timeframe for confirmation
