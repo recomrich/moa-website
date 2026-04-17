@@ -5,56 +5,79 @@ bot:
 risk:
   max_risk_per_trade_pct: 1.5     # risquer 1.5% par trade
   max_drawdown_pct: 15.0          # drawdown max avant arret
-  max_open_positions: 10
+  max_open_positions: 15          # plus de positions simultanees
   max_positions_per_symbol: 3
-  cooldown_minutes: 15            # 15 min entre trades (etait 30)
+  cooldown_minutes: 10            # 10 min entre trades sur meme symbole
   max_leverage: 20
-  min_reward_risk_ratio: 1.5      # R:R 1.5 au lieu de 2.0 (plus de trades)
+  min_reward_risk_ratio: 1.3      # abaisse a 1.3 pour accepter plus de trades
 
 trading_pairs:
   spot:
     - symbol: "BTC"
-      strategies: ["trend_following", "mean_reversion", "breakout", "swing_range"]
+      strategies: ["trend_following", "momentum", "breakout", "swing_range"]
     - symbol: "ETH"
-      strategies: ["trend_following", "mean_reversion", "grid_trading", "swing_range"]
+      strategies: ["trend_following", "momentum", "mean_reversion", "swing_range"]
+    - symbol: "SOL"
+      strategies: ["momentum", "breakout", "swing_range"]
     - symbol: "XRP"
-      strategies: ["trend_following", "mean_reversion", "grid_trading", "swing_range"]
+      strategies: ["trend_following", "momentum", "mean_reversion", "swing_range"]
   perps:
     - symbol: "BTC"
       leverage: 5
-      strategies: ["trend_following", "breakout", "scalping", "swing_range"]
+      strategies: ["trend_following", "momentum", "breakout", "scalping", "swing_range"]
     - symbol: "ETH"
       leverage: 5
-      strategies: ["trend_following", "mean_reversion", "swing_range"]
+      strategies: ["trend_following", "momentum", "mean_reversion", "breakout", "swing_range"]
     - symbol: "SOL"
-      leverage: 3
-      strategies: ["breakout", "mean_reversion", "grid_trading", "swing_range"]
+      leverage: 5
+      strategies: ["momentum", "breakout", "mean_reversion", "swing_range"]
     - symbol: "XRP"
       leverage: 5
-      strategies: ["trend_following", "breakout", "mean_reversion", "swing_range"]
+      strategies: ["trend_following", "momentum", "breakout", "swing_range"]
     - symbol: "IO"
       leverage: 5
-      strategies: ["mean_reversion", "grid_trading", "swing_range"]
+      strategies: ["momentum", "mean_reversion", "grid_trading", "swing_range"]
+    - symbol: "PEPE"
+      leverage: 3
+      strategies: ["momentum", "breakout", "scalping", "swing_range"]
+    - symbol: "HYPE"
+      leverage: 3
+      strategies: ["momentum", "breakout", "swing_range"]
+    - symbol: "WIF"
+      leverage: 3
+      strategies: ["momentum", "breakout", "swing_range"]
+    - symbol: "DOGE"
+      leverage: 3
+      strategies: ["momentum", "mean_reversion", "swing_range"]
+    - symbol: "AVAX"
+      leverage: 3
+      strategies: ["momentum", "trend_following", "swing_range"]
+    - symbol: "SUI"
+      leverage: 3
+      strategies: ["momentum", "breakout", "swing_range"]
+    - symbol: "LINK"
+      leverage: 3
+      strategies: ["momentum", "trend_following", "swing_range"]
 
 strategies:
   trend_following:
     enabled: true
-    timeframe: "15m"        # etait 1h -> 15min pour trades plus courts
+    timeframe: "15m"
     ema_periods: [20, 50, 200]
   mean_reversion:
     enabled: true
     timeframe: "15m"
-    rsi_oversold: 35        # etait 30 -> detecte plus tot
-    rsi_overbought: 65      # etait 70 -> detecte plus tot
+    rsi_oversold: 35
+    rsi_overbought: 65
     bb_period: 20
     bb_std: 2.0
   breakout:
     enabled: true
-    timeframe: "15m"        # etait 1h -> 15min
-    volume_multiplier: 1.3  # etait 1.5 -> moins de volume requis
-    lookback_period: 15     # etait 20 -> fenetre plus courte
+    timeframe: "15m"
+    volume_multiplier: 1.2        # abaisse a 1.2 pour plus de signaux
+    lookback_period: 12           # fenetre plus courte pour reagir plus vite
   scalping:
-    enabled: true           # ACTIVE maintenant
+    enabled: true
     timeframe: "5m"
     ema_fast: 5
     ema_slow: 13
@@ -69,9 +92,20 @@ strategies:
   swing_range:
     enabled: true
     timeframe: "15m"
-    lookback_days: 30          # analyse les 30 derniers jours
-    entry_zone_pct: 25         # achete dans les 25% bas, vend dans les 25% haut
-    min_daily_range_pct: 2.0   # ignore les cryptos qui bougent moins de 2%/jour
+    lookback_days: 30
+    entry_zone_pct: 25
+    min_daily_range_pct: 1.5      # abaisse a 1.5% (etait 2%)
+  momentum:
+    enabled: true
+    timeframe: "15m"
+    ema_fast: 9
+    ema_slow: 21
+    momentum_pct: 1.5             # detecte des moves de +1.5% sur 4 bougies (= ~1h)
+    lookback_candles: 4
+    rsi_min_buy: 48
+    rsi_max_buy: 72
+    rsi_min_sell: 28
+    rsi_max_sell: 52
 
 dashboard:
   enabled: true

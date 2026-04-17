@@ -72,6 +72,10 @@ class OrderManager:
         "ARB": 0,
         "OP": 1,
         "SUI": 1,
+        "LINK": 1,
+        "PEPE": 0,
+        "HYPE": 1,
+        "WIF": 0,
     }
     MIN_ORDER_VALUE = 10.0  # Minimum $10 order
 

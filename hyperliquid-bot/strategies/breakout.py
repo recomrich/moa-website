@@ -36,6 +36,7 @@ class BreakoutStrategy(BaseStrategy):
 
         latest = data.iloc[-1]
         current_close = latest.get("close")
+        current_open = latest.get("open")
         current_volume = latest.get("volume", 0)
         avg_volume = latest.get("Volume_SMA")
         current_atr = latest.get("ATR")
@@ -48,27 +49,36 @@ class BreakoutStrategy(BaseStrategy):
         resistance = lookback_data["high"].max()
         support = lookback_data["low"].min()
 
-        # Volume confirmation threshold
+        # Volume confirmation: current OR recent candles show high volume
         volume_threshold = avg_volume * self._volume_multiplier
-        high_volume = current_volume > volume_threshold
+        recent_max_vol = data["volume"].iloc[-3:].max()
+        high_volume = current_volume > volume_threshold or recent_max_vol > volume_threshold
 
-        # BUY: Breakout above resistance with volume
-        if current_close > resistance and high_volume:
+        # ATR expansion as alternative to volume (price moving strongly)
+        avg_atr = data["ATR"].iloc[-self._lookback:].mean()
+        atr_expansion = not pd.isna(avg_atr) and current_atr > avg_atr * 1.1
+
+        volume_confirmed = high_volume or atr_expansion
+
+        # BUY: Price at or above resistance + volume/ATR confirmation
+        if current_close >= resistance * 0.998 and volume_confirmed:
             self._signal_count += 1
             logger.info(
                 f"[{self.name}] BUY signal - "
                 f"breakout above {resistance:.2f}, "
-                f"volume={current_volume:.0f} > threshold={volume_threshold:.0f}"
+                f"close={current_close:.2f}, "
+                f"vol_ok={high_volume}, atr_exp={atr_expansion}"
             )
             return Signal.BUY
 
-        # SELL: Breakdown below support with volume
-        if current_close < support and high_volume:
+        # SELL: Price at or below support + volume/ATR confirmation
+        if current_close <= support * 1.002 and volume_confirmed:
             self._signal_count += 1
             logger.info(
                 f"[{self.name}] SELL signal - "
                 f"breakdown below {support:.2f}, "
-                f"volume={current_volume:.0f} > threshold={volume_threshold:.0f}"
+                f"close={current_close:.2f}, "
+                f"vol_ok={high_volume}, atr_exp={atr_expansion}"
             )
             return Signal.SELL
 
