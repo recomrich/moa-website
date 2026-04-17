@@ -221,6 +221,9 @@ class TradingBot:
             dash_thread.start()
             logger.info(f"Dashboard available at http://localhost:{port}")
 
+        # Validate trading pairs against available symbols
+        self._validate_trading_pairs()
+
         # Main trading loop
         self._running = True
         self._start_time = time.time()
@@ -235,6 +238,34 @@ class TradingBot:
         finally:
             self._running = False
             logger.info("Bot stopped")
+
+    def _validate_trading_pairs(self) -> None:
+        """Check which configured symbols are available on the exchange.
+
+        Removes unavailable symbols and logs warnings.
+        """
+        available = self._feed.get_available_symbols()
+        if not available:
+            logger.warning("Could not fetch available symbols - skipping validation")
+            return
+
+        logger.info(f"Exchange has {len(available)} available symbols")
+
+        valid_pairs = []
+        for pair in self._trading_pairs:
+            symbol = pair["symbol"]
+            if symbol in available:
+                valid_pairs.append(pair)
+            else:
+                logger.warning(
+                    f"Symbol '{symbol}' not found on exchange - removing from trading pairs. "
+                    f"Available similar: {[s for s in available if symbol.lower() in s.lower()]}"
+                )
+
+        removed = len(self._trading_pairs) - len(valid_pairs)
+        if removed > 0:
+            logger.info(f"Removed {removed} unavailable pairs, {len(valid_pairs)} pairs active")
+        self._trading_pairs = valid_pairs
 
     def _run_loop(self) -> None:
         """Main trading loop."""

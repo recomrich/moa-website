@@ -16,6 +16,8 @@ class DataFeed:
         self._client = client
         self._last_prices: dict[str, float] = {}
         self._last_update: float = 0.0
+        self._available_symbols: set[str] = set()
+        self._symbol_checked: set[str] = set()
 
     def get_current_prices(self) -> dict[str, float]:
         """Get current mid prices for all assets."""
@@ -24,10 +26,23 @@ class DataFeed:
             self._last_prices = {
                 symbol: float(price) for symbol, price in mids.items()
             }
+            self._available_symbols = set(mids.keys())
             self._last_update = time.time()
         except Exception as e:
             logger.error(f"Failed to fetch prices: {e}")
         return self._last_prices
+
+    def is_symbol_available(self, symbol: str) -> bool:
+        """Check if a symbol is available on the exchange."""
+        if not self._available_symbols:
+            self.get_current_prices()
+        return symbol in self._available_symbols
+
+    def get_available_symbols(self) -> set[str]:
+        """Get all available trading symbols."""
+        if not self._available_symbols:
+            self.get_current_prices()
+        return self._available_symbols.copy()
 
     def get_price(self, symbol: str) -> Optional[float]:
         """Get current price for a specific symbol."""
