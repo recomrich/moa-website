@@ -74,6 +74,7 @@ class OrderManager:
         "SUI": 1,
         "LINK": 1,
         "PEPE": 0,
+        "kPEPE": 0,
         "HYPE": 1,
         "WIF": 0,
     }

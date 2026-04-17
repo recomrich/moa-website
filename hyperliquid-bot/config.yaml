@@ -37,7 +37,7 @@ trading_pairs:
     - symbol: "IO"
       leverage: 5
       strategies: ["momentum", "cycle_trader", "mean_reversion"]
-    - symbol: "PEPE"
+    - symbol: "kPEPE"
       leverage: 3
       strategies: ["momentum", "cycle_trader", "breakout"]
     - symbol: "HYPE"
