@@ -1,5 +1,5 @@
 /**
- * Hyperliquid Trading Bot - Premium Dashboard
+ * Hyperliquid Trading Bot - CoinTrader Style Dashboard
  */
 
 let ws = null;
@@ -11,13 +11,17 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT = 10;
 const POLL_INTERVAL = 5000;
 
+const SYMBOL_COLORS = {
+    BTC: '#f7931a', ETH: '#627eea', SOL: '#9945ff', XRP: '#546e7a',
+    IO: '#4a90d9', LINK: '#2a5ada', DOGE: '#c2a633', SUI: '#4da2ff',
+    AVAX: '#e84142',
+};
+
 // --- WebSocket ---
 
 function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${protocol}//${window.location.host}/ws`;
-
-    ws = new WebSocket(url);
+    ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
 
     ws.onopen = () => {
         reconnectAttempts = 0;
@@ -28,9 +32,7 @@ function connectWebSocket() {
         try {
             const msg = JSON.parse(event.data);
             handleWSMessage(msg.event, msg.data);
-        } catch (e) {
-            console.error('WS parse error:', e);
-        }
+        } catch (e) {}
     };
 
     ws.onclose = () => {
@@ -44,8 +46,7 @@ function connectWebSocket() {
 function scheduleReconnect() {
     if (reconnectAttempts >= MAX_RECONNECT) return;
     reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-    setTimeout(connectWebSocket, delay);
+    setTimeout(connectWebSocket, Math.min(1000 * Math.pow(2, reconnectAttempts), 30000));
 }
 
 function handleWSMessage(event, data) {
@@ -55,7 +56,6 @@ function handleWSMessage(event, data) {
         case 'trades': renderTrades(data); break;
         case 'strategies': renderStrategies(data); break;
         case 'equity': updateEquityChart(data); break;
-        case 'prices': updatePrices(data); break;
     }
 }
 
@@ -66,10 +66,7 @@ async function fetchAPI(endpoint, options = {}) {
         const res = await fetch(endpoint, options);
         if (!res.ok) return null;
         return await res.json();
-    } catch (e) {
-        console.error(`API error (${endpoint}):`, e);
-        return null;
-    }
+    } catch (e) { return null; }
 }
 
 async function pollData() {
@@ -88,129 +85,134 @@ async function pollData() {
     if (equity) updateEquityChart(equity);
 }
 
-// --- UI Updates ---
+// --- Status ---
 
 function updateBotStatus(state, text) {
     const badge = document.getElementById('bot-status');
-    const statusText = document.getElementById('bot-status-text');
+    const st = document.getElementById('bot-status-text');
     if (badge) badge.className = `status-badge ${state}`;
-    if (statusText) statusText.textContent = text;
+    if (st) st.textContent = text;
 }
 
 function updateStatusDisplay(data) {
-    const portfolio = data.portfolio || {};
+    const p = data.portfolio || {};
     const risk = data.risk || {};
 
-    setText('portfolio-value', `$${formatNum(portfolio.total_value || 0)}`);
+    setText('portfolio-value', `$${formatNum(p.total_value || 0)}`);
+    setText('mode-label', data.mode === 'paper' ? 'paper mode' : 'live trading');
 
-    const dailyPnl = portfolio.daily_pnl || 0;
-    const dailyPnlPct = portfolio.daily_pnl_pct || 0;
-    setTextWithColor('daily-pnl', `$${formatNum(dailyPnl, true)}`, dailyPnl);
-    setTextWithColor('daily-pnl-pct', `${formatNum(dailyPnlPct, true)}%`, dailyPnlPct);
+    const dailyPnl = p.daily_pnl || 0;
+    const dailyPnlPct = p.daily_pnl_pct || 0;
+    setValColor('daily-pnl', `$${formatNum(dailyPnl, true)}`, dailyPnl);
+    setValColor('daily-pnl-pct', `${formatNum(dailyPnlPct, true)}%`, dailyPnlPct);
 
-    // Stat cards
-    const totalPnl = portfolio.total_pnl || 0;
-    setTextWithColor('total-pnl', `$${formatNum(totalPnl, true)}`, totalPnl);
+    const totalPnl = p.total_pnl || 0;
+    setValColor('total-pnl', `$${formatNum(totalPnl, true)}`, totalPnl);
 
-    const drawdown = risk.current_drawdown || 0;
-    const maxDrawdown = risk.max_drawdown || 0;
-    setText('drawdown', `${Math.abs(drawdown).toFixed(1)}%`);
-    setText('drawdown-sub', `max: ${Math.abs(maxDrawdown).toFixed(1)}%`);
-
-    const running = data.running;
-    if (running) {
+    if (data.running) {
         updateBotStatus('active', `${data.mode === 'paper' ? 'Paper' : 'Live'} Trading`);
     } else {
         updateBotStatus('paused', 'Paused');
     }
 }
 
+// --- Positions (Assets table) ---
+
 function renderPositions(positions) {
     const tbody = document.getElementById('positions-table');
     if (!positions || positions.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No open positions</td></tr>';
-        setText('open-positions', '0');
-        setText('positions-count', '0');
-        setText('positions-sub', '0 long / 0 short');
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No open positions</td></tr>';
+        setText('positions-count', '0 open');
+        drawPieChart([]);
         return;
     }
 
-    const count = positions.length;
-    const longs = positions.filter(p => p.side === 'buy').length;
-    const shorts = count - longs;
-
-    setText('open-positions', count.toString());
-    setText('positions-count', count.toString());
-    setText('positions-sub', `${longs} long / ${shorts} short`);
+    setText('positions-count', `${positions.length} open`);
+    drawPieChart(positions);
 
     tbody.innerHTML = positions.map(p => {
-        const sideClass = p.side === 'buy' ? 'side-buy' : 'side-sell';
-        const sideText = p.side === 'buy' ? 'LONG' : 'SHORT';
-        const pnlClass = p.unrealized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
-        const pctClass = p.pnl_pct >= 0 ? 'pnl-positive' : 'pnl-negative';
+        const sym = (p.symbol || '').toUpperCase();
+        const iconClass = sym.toLowerCase();
+        const isLong = p.side === 'buy';
+        const pnlVal = p.unrealized_pnl || 0;
+        const pnlPct = p.pnl_pct || 0;
+        const pnlClass = pnlVal >= 0 ? 'pnl-positive' : 'pnl-negative';
+        const entryVal = (p.entry_price || 0) * (p.size || 0);
 
         return `<tr>
-            <td><span class="symbol-name">${p.symbol}</span></td>
-            <td><span class="${sideClass}">${sideText}</span></td>
-            <td>${p.size}</td>
-            <td>${formatPrice(p.entry_price)}</td>
-            <td>${formatPrice(p.current_price)}</td>
-            <td class="${pnlClass}">$${formatNum(p.unrealized_pnl, true)}</td>
-            <td class="${pctClass}">${formatNum(p.pnl_pct, true)}%</td>
-            <td><span class="leverage-badge">${p.leverage}x</span></td>
-            <td>${formatPrice(p.stop_loss)} / ${formatPrice(p.take_profit)}</td>
+            <td>
+                <div class="symbol-cell">
+                    <div class="symbol-icon ${SYMBOL_COLORS[sym] ? iconClass : 'default'}">${sym.slice(0,2)}</div>
+                    <span class="symbol-name">${sym}</span>
+                </div>
+            </td>
             <td><span class="strategy-tag">${formatStrategy(p.strategy)}</span></td>
+            <td>$${formatNum(entryVal)}</td>
+            <td class="${pnlClass}">${formatNum(pnlPct, true)}%</td>
+            <td><span class="${isLong ? 'side-long' : 'side-short'}">${isLong ? 'Long' : 'Short'}</span></td>
+            <td><span class="leverage-badge">${p.leverage}x</span></td>
+            <td class="${pnlClass}">${formatNum(pnlPct, true)}%</td>
+            <td style="font-family:var(--mono);font-size:0.78rem">${p.size} ${sym}</td>
         </tr>`;
     }).join('');
 }
+
+// --- Trades ---
 
 function renderTrades(trades) {
     const tbody = document.getElementById('trades-table');
     if (!trades || trades.length === 0) {
         tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No trades yet</td></tr>';
         setText('trades-count', '0');
+        updateTradeStats(0, 0);
         return;
     }
 
-    const displayed = trades.slice(0, 30);
     setText('trades-count', trades.length.toString());
 
-    // Update win rate card
     const wins = trades.filter(t => (t.pnl || 0) > 0).length;
     const losses = trades.filter(t => (t.pnl || 0) < 0).length;
-    const total = wins + losses;
-    const winRate = total > 0 ? Math.round((wins / total) * 100) : 0;
-    setText('win-rate', `${winRate}%`);
-    setText('win-rate-sub', `${wins}W / ${losses}L`);
-    setText('total-trades', total.toString());
+    updateTradeStats(wins, losses);
 
-    // Color the win rate
-    const wrEl = document.getElementById('win-rate');
-    if (wrEl) {
-        wrEl.className = 'card-value' + (winRate >= 50 ? ' positive' : winRate > 0 ? ' negative' : '');
-    }
-
-    tbody.innerHTML = displayed.map(t => {
-        const sideClass = t.side === 'buy' ? 'side-buy' : 'side-sell';
-        const sideText = t.side === 'buy' ? 'LONG' : 'SHORT';
+    tbody.innerHTML = trades.slice(0, 30).map(t => {
+        const sym = (t.symbol || '').toUpperCase();
+        const iconClass = sym.toLowerCase();
+        const isLong = t.side === 'buy';
         const pnl = t.pnl || 0;
         const pnlPct = t.pnl_pct || 0;
         const pnlClass = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
         const reason = t.close_reason || t.reason || '-';
-        const reasonClass = getReasonClass(reason);
 
         return `<tr>
-            <td><span class="symbol-name">${t.symbol}</span></td>
-            <td><span class="${sideClass}">${sideText}</span></td>
-            <td>${formatPrice(t.entry_price)}</td>
-            <td>${formatPrice(t.exit_price)}</td>
+            <td>
+                <div class="symbol-cell">
+                    <div class="symbol-icon ${SYMBOL_COLORS[sym] ? iconClass : 'default'}">${sym.slice(0,2)}</div>
+                    <span class="symbol-name">${sym}</span>
+                </div>
+            </td>
+            <td><span class="${isLong ? 'side-long' : 'side-short'}">${isLong ? 'Long' : 'Short'}</span></td>
+            <td style="font-family:var(--mono)">${formatPrice(t.entry_price)}</td>
+            <td style="font-family:var(--mono)">${formatPrice(t.exit_price)}</td>
             <td class="${pnlClass}">$${formatNum(pnl, true)}</td>
             <td class="${pnlClass}">${formatNum(pnlPct, true)}%</td>
             <td><span class="strategy-tag">${formatStrategy(t.strategy)}</span></td>
-            <td><span class="reason-tag ${reasonClass}">${reason}</span></td>
+            <td><span class="reason-tag ${getReasonClass(reason)}">${reason}</span></td>
         </tr>`;
     }).join('');
 }
+
+function updateTradeStats(wins, losses) {
+    const total = wins + losses;
+    setText('wins-badge', wins.toString());
+    setText('losses-badge', losses.toString());
+
+    const winsBar = document.getElementById('wins-bar');
+    const lossesBar = document.getElementById('losses-bar');
+    if (winsBar) winsBar.style.width = total > 0 ? `${(wins / total) * 100}%` : '0%';
+    if (lossesBar) lossesBar.style.width = total > 0 ? `${(losses / total) * 100}%` : '0%';
+}
+
+// --- Strategies ---
 
 function renderStrategies(strategies) {
     const grid = document.getElementById('strategies-grid');
@@ -224,30 +226,15 @@ function renderStrategies(strategies) {
 
     grid.innerHTML = strategies.map(s => {
         const wr = s.win_rate || 0;
-        const wrBarClass = wr >= 55 ? 'good' : wr >= 45 ? 'mid' : 'bad';
-        const name = formatStrategy(s.name);
+        const barClass = wr >= 55 ? 'good' : wr >= 45 ? 'mid' : 'bad';
 
         return `<div class="strategy-card">
-            <div class="name">${name}</div>
-            <div class="metric">
-                <span>Timeframe</span>
-                <span>${s.timeframe}</span>
-            </div>
-            <div class="metric">
-                <span>Signals</span>
-                <span>${s.signals_generated || 0}</span>
-            </div>
-            <div class="metric">
-                <span>Win Rate</span>
-                <span style="color: ${wr >= 50 ? 'var(--green)' : 'var(--text-primary)'}">${wr}%</span>
-            </div>
-            <div class="metric">
-                <span>W / L</span>
-                <span>${s.wins || 0} / ${s.losses || 0}</span>
-            </div>
-            <div class="winrate-bar">
-                <div class="fill ${wrBarClass}" style="width: ${wr}%"></div>
-            </div>
+            <div class="name">${formatStrategy(s.name)}</div>
+            <div class="metric"><span>Timeframe</span><span>${s.timeframe}</span></div>
+            <div class="metric"><span>Signals</span><span>${s.signals_generated || 0}</span></div>
+            <div class="metric"><span>Win Rate</span><span style="color:${wr >= 50 ? 'var(--green)' : 'var(--text)'}">${wr}%</span></div>
+            <div class="metric"><span>W / L</span><span>${s.wins || 0} / ${s.losses || 0}</span></div>
+            <div class="winrate-bar"><div class="fill ${barClass}" style="width:${wr}%"></div></div>
             <button class="toggle-btn ${s.enabled ? 'active' : ''}" onclick="toggleStrategy('${s.name}')">
                 ${s.enabled ? 'Enabled' : 'Disabled'}
             </button>
@@ -261,94 +248,135 @@ async function toggleStrategy(name) {
     if (strategies) renderStrategies(strategies);
 }
 
+// --- Pie Chart (Canvas) ---
+
+function drawPieChart(positions) {
+    const canvas = document.getElementById('pie-chart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    const cx = w / 2, cy = h / 2, r = 90, inner = 60;
+
+    ctx.clearRect(0, 0, w, h);
+
+    if (!positions || positions.length === 0) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.arc(cx, cy, inner, 0, Math.PI * 2, true);
+        ctx.fillStyle = 'rgba(255,255,255,0.06)';
+        ctx.fill();
+        setText('pie-main', 'No data');
+        setText('pie-sub', '');
+        document.getElementById('pie-legend').innerHTML = '';
+        return;
+    }
+
+    const symbolTotals = {};
+    positions.forEach(p => {
+        const sym = (p.symbol || 'OTHER').toUpperCase();
+        const val = Math.abs((p.entry_price || 0) * (p.size || 0));
+        symbolTotals[sym] = (symbolTotals[sym] || 0) + val;
+    });
+
+    const entries = Object.entries(symbolTotals).sort((a, b) => b[1] - a[1]);
+    const total = entries.reduce((s, e) => s + e[1], 0);
+
+    if (total === 0) {
+        drawPieChart([]);
+        return;
+    }
+
+    const defaultColors = ['#a855f7', '#6366f1', '#3b82f6', '#14b8a6', '#f59e0b', '#ef4444', '#ec4899'];
+    let startAngle = -Math.PI / 2;
+
+    entries.forEach(([sym, val], i) => {
+        const slice = (val / total) * Math.PI * 2;
+        const color = SYMBOL_COLORS[sym] || defaultColors[i % defaultColors.length];
+
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, startAngle, startAngle + slice);
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+
+        startAngle += slice;
+    });
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, inner, 0, Math.PI * 2);
+    ctx.fillStyle = getComputedStyle(document.body).backgroundColor || '#2d1b69';
+    ctx.fill();
+
+    // Approximate the gradient background for center
+    ctx.beginPath();
+    ctx.arc(cx, cy, inner, 0, Math.PI * 2);
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, inner);
+    grad.addColorStop(0, 'rgba(45, 27, 105, 1)');
+    grad.addColorStop(1, 'rgba(35, 20, 80, 1)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    const topSym = entries[0][0];
+    const topPct = Math.round((entries[0][1] / total) * 100);
+    setText('pie-main', topSym);
+    setText('pie-sub', `${topPct}%`);
+
+    const legend = document.getElementById('pie-legend');
+    legend.innerHTML = entries.map(([sym, val], i) => {
+        const color = SYMBOL_COLORS[sym] || defaultColors[i % defaultColors.length];
+        return `<div class="pie-legend-item">
+            <div class="pie-legend-dot" style="background:${color}"></div>
+            ${sym}
+        </div>`;
+    }).join('');
+}
+
 // --- Charts ---
 
 function initCharts() {
-    const equityContainer = document.getElementById('equity-chart');
-    if (equityContainer && window.LightweightCharts) {
-        equityChart = LightweightCharts.createChart(equityContainer, {
-            width: equityContainer.clientWidth,
-            height: 290,
-            layout: {
-                background: { color: '#141620' },
-                textColor: '#8b8fa3',
-                fontFamily: "'Inter', sans-serif",
-            },
-            grid: {
-                vertLines: { color: 'rgba(255,255,255,0.04)' },
-                horzLines: { color: 'rgba(255,255,255,0.04)' },
-            },
+    const eqC = document.getElementById('equity-chart');
+    if (eqC && window.LightweightCharts) {
+        equityChart = LightweightCharts.createChart(eqC, {
+            width: eqC.clientWidth, height: 270,
+            layout: { background: { color: 'transparent' }, textColor: 'rgba(255,255,255,0.45)', fontFamily: "'Poppins', sans-serif" },
+            grid: { vertLines: { color: 'rgba(255,255,255,0.04)' }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
             timeScale: { timeVisible: true, borderColor: 'rgba(255,255,255,0.06)' },
             rightPriceScale: { borderColor: 'rgba(255,255,255,0.06)' },
-            crosshair: {
-                vertLine: { color: 'rgba(99,102,241,0.3)', width: 1, style: 2 },
-                horzLine: { color: 'rgba(99,102,241,0.3)', width: 1, style: 2 },
-            },
+            crosshair: { vertLine: { color: 'rgba(240,201,38,0.3)', width: 1, style: 2 }, horzLine: { color: 'rgba(240,201,38,0.3)', width: 1, style: 2 } },
         });
         equitySeries = equityChart.addAreaSeries({
-            lineColor: '#6366f1',
-            topColor: 'rgba(99, 102, 241, 0.28)',
-            bottomColor: 'rgba(99, 102, 241, 0.0)',
-            lineWidth: 2,
+            lineColor: '#f0c926', topColor: 'rgba(240, 201, 38, 0.25)', bottomColor: 'rgba(240, 201, 38, 0.0)', lineWidth: 2,
         });
     }
 
-    const priceContainer = document.getElementById('price-chart');
-    if (priceContainer && window.LightweightCharts) {
-        priceChart = LightweightCharts.createChart(priceContainer, {
-            width: priceContainer.clientWidth,
-            height: 290,
-            layout: {
-                background: { color: '#141620' },
-                textColor: '#8b8fa3',
-                fontFamily: "'Inter', sans-serif",
-            },
-            grid: {
-                vertLines: { color: 'rgba(255,255,255,0.04)' },
-                horzLines: { color: 'rgba(255,255,255,0.04)' },
-            },
+    const prC = document.getElementById('price-chart');
+    if (prC && window.LightweightCharts) {
+        priceChart = LightweightCharts.createChart(prC, {
+            width: prC.clientWidth, height: 270,
+            layout: { background: { color: 'transparent' }, textColor: 'rgba(255,255,255,0.45)', fontFamily: "'Poppins', sans-serif" },
+            grid: { vertLines: { color: 'rgba(255,255,255,0.04)' }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
             timeScale: { timeVisible: true, borderColor: 'rgba(255,255,255,0.06)' },
             rightPriceScale: { borderColor: 'rgba(255,255,255,0.06)' },
-            crosshair: {
-                vertLine: { color: 'rgba(99,102,241,0.3)', width: 1, style: 2 },
-                horzLine: { color: 'rgba(99,102,241,0.3)', width: 1, style: 2 },
-            },
+            crosshair: { vertLine: { color: 'rgba(240,201,38,0.3)', width: 1, style: 2 }, horzLine: { color: 'rgba(240,201,38,0.3)', width: 1, style: 2 } },
         });
         priceSeries = priceChart.addCandlestickSeries({
-            upColor: '#22c55e',
-            downColor: '#ef4444',
-            borderUpColor: '#22c55e',
-            borderDownColor: '#ef4444',
-            wickUpColor: '#22c55e',
-            wickDownColor: '#ef4444',
+            upColor: '#2ecc71', downColor: '#e74c3c', borderUpColor: '#2ecc71', borderDownColor: '#e74c3c', wickUpColor: '#2ecc71', wickDownColor: '#e74c3c',
         });
     }
 
     window.addEventListener('resize', () => {
-        if (equityChart && equityContainer) {
-            equityChart.applyOptions({ width: equityContainer.clientWidth });
-        }
-        if (priceChart && priceContainer) {
-            priceChart.applyOptions({ width: priceContainer.clientWidth });
-        }
+        if (equityChart && eqC) equityChart.applyOptions({ width: eqC.clientWidth });
+        if (priceChart && prC) priceChart.applyOptions({ width: prC.clientWidth });
     });
 }
 
 function updateEquityChart(data) {
     if (!equitySeries || !data || data.length === 0) return;
-
-    const chartData = data.map(d => ({
-        time: typeof d.timestamp === 'number'
-            ? Math.floor(d.timestamp)
-            : Math.floor(new Date(d.timestamp).getTime() / 1000),
+    equitySeries.setData(data.map(d => ({
+        time: typeof d.timestamp === 'number' ? Math.floor(d.timestamp) : Math.floor(new Date(d.timestamp).getTime() / 1000),
         value: d.value,
-    }));
-
-    equitySeries.setData(chartData);
-}
-
-function updatePrices(pricesData) {
-    // Handled via WS
+    })));
 }
 
 // --- Helpers ---
@@ -358,21 +386,19 @@ function setText(id, text) {
     if (el) el.textContent = text;
 }
 
-function setTextWithColor(id, text, value) {
+function setValColor(id, text, value) {
     const el = document.getElementById(id);
     if (!el) return;
     el.textContent = text;
-    el.className = 'stat-value ' + (value >= 0 ? 'positive' : 'negative');
+    el.className = 'card-value ' + (value >= 0 ? 'positive' : 'negative');
 }
 
 function formatNum(n, signed = false) {
     if (n === null || n === undefined) return '0.00';
     const abs = Math.abs(n);
-    const formatted = abs >= 1000
-        ? abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        : abs.toFixed(2);
-    if (signed) return (n >= 0 ? '+' : '-') + formatted;
-    return formatted;
+    const f = abs >= 1000 ? abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : abs.toFixed(2);
+    if (signed) return (n >= 0 ? '+' : '-') + f;
+    return f;
 }
 
 function formatPrice(p) {
@@ -388,7 +414,7 @@ function formatStrategy(name) {
 function getReasonClass(reason) {
     if (!reason) return 'other';
     const r = reason.toLowerCase();
-    if (r.includes('tp') || r.includes('take') || r.includes('profit') || r.includes('target')) return 'tp';
+    if (r.includes('tp') || r.includes('take') || r.includes('profit')) return 'tp';
     if (r.includes('sl') || r.includes('stop') || r.includes('loss')) return 'sl';
     return 'other';
 }
@@ -400,4 +426,5 @@ document.addEventListener('DOMContentLoaded', () => {
     connectWebSocket();
     pollData();
     setInterval(pollData, POLL_INTERVAL);
+    drawPieChart([]);
 });

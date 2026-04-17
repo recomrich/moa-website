@@ -15,113 +15,115 @@
         <div class="logo">HL</div>
         <h1>Hyper<span>liquid</span> Bot</h1>
     </div>
-    <div class="header-stats">
-        <div class="stat-item">
-            <div class="stat-label">Portfolio</div>
-            <div class="stat-value" id="portfolio-value">$0.00</div>
-        </div>
-        <div class="stat-item">
-            <div class="stat-label">Daily PnL</div>
-            <div class="stat-value" id="daily-pnl">$0.00</div>
-        </div>
-        <div class="stat-item">
-            <div class="stat-label">Daily %</div>
-            <div class="stat-value" id="daily-pnl-pct">0.00%</div>
-        </div>
-        <div class="stat-item">
-            <span class="status-badge active" id="bot-status">
-                <span class="status-dot"></span>
-                <span id="bot-status-text">Connecting...</span>
-            </span>
-        </div>
+    <nav class="nav-links">
+        <a class="active">Dashboard</a>
+        <a>Positions</a>
+        <a>History</a>
+        <a>Settings</a>
+    </nav>
+    <div class="header-right">
+        <span class="status-badge active" id="bot-status">
+            <span class="status-dot"></span>
+            <span id="bot-status-text">Connecting...</span>
+        </span>
     </div>
 </header>
 
-<!-- Stat Cards Row -->
+<!-- Stat Cards -->
 <div class="stats-row">
     <div class="stat-card">
-        <div class="icon purple">&#9672;</div>
-        <div class="card-label">Open Positions</div>
-        <div class="card-value" id="open-positions">0</div>
-        <div class="card-sub" id="positions-sub">0 long / 0 short</div>
+        <div class="card-label">Total Balance</div>
+        <div class="card-value yellow" id="portfolio-value">$0.00</div>
+        <div class="card-sub" id="mode-label">paper mode</div>
     </div>
     <div class="stat-card">
-        <div class="icon green">&#9650;</div>
-        <div class="card-label">Total PnL</div>
+        <div class="card-label">Last 24h</div>
+        <div class="card-value" id="daily-pnl">$0.00</div>
+        <div class="card-sub" id="daily-pnl-pct">0.00%</div>
+    </div>
+    <div class="stat-card">
+        <div class="card-label">All Time PnL</div>
         <div class="card-value" id="total-pnl">$0.00</div>
-        <div class="card-sub" id="total-pnl-sub">all time</div>
+        <div class="card-sub" id="total-pnl-sub">since start</div>
     </div>
     <div class="stat-card">
-        <div class="icon blue">&#9679;</div>
-        <div class="card-label">Win Rate</div>
-        <div class="card-value" id="win-rate">0%</div>
-        <div class="card-sub" id="win-rate-sub">0W / 0L</div>
+        <div class="card-label">Positive Trades</div>
+        <div class="trade-badge green" id="wins-badge">0</div>
+        <div class="progress-bar"><div class="fill green" id="wins-bar" style="width:0%"></div></div>
     </div>
     <div class="stat-card">
-        <div class="icon orange">&#9733;</div>
-        <div class="card-label">Total Trades</div>
-        <div class="card-value" id="total-trades">0</div>
-        <div class="card-sub" id="total-trades-sub">today: 0</div>
-    </div>
-    <div class="stat-card">
-        <div class="icon red">&#9888;</div>
-        <div class="card-label">Drawdown</div>
-        <div class="card-value" id="drawdown">0.0%</div>
-        <div class="card-sub" id="drawdown-sub">max: 0.0%</div>
+        <div class="card-label">Negative Trades</div>
+        <div class="trade-badge red" id="losses-badge">0</div>
+        <div class="progress-bar"><div class="fill red" id="losses-bar" style="width:0%"></div></div>
     </div>
 </div>
 
 <!-- Main Content -->
-<main class="main">
+<div class="content">
+    <!-- Assets / Positions Table (left) -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Assets</div>
+            <div class="card-badge" id="positions-count">0 open</div>
+        </div>
+        <div style="overflow-x: auto; max-height: 450px;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Strategy</th>
+                        <th>Actual ($)</th>
+                        <th>Actual (%)</th>
+                        <th>Position</th>
+                        <th>Leverage</th>
+                        <th>Change</th>
+                        <th>Balance</th>
+                    </tr>
+                </thead>
+                <tbody id="positions-table">
+                    <tr><td colspan="8" class="empty-state">No open positions</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Portfolio Distribution (right) -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Portfolio Distribution</div>
+        </div>
+        <div class="pie-wrap">
+            <div class="pie-chart-container">
+                <canvas id="pie-chart" width="220" height="220"></canvas>
+                <div class="pie-center-label">
+                    <div class="main-label" id="pie-main">No data</div>
+                    <div class="sub-label" id="pie-sub"></div>
+                </div>
+            </div>
+            <div class="pie-legend" id="pie-legend"></div>
+        </div>
+    </div>
+
     <!-- Charts -->
     <div class="chart-section">
         <div class="card">
             <div class="card-header">
                 <div class="card-title">Equity Curve</div>
-                <div class="card-badge" id="equity-badge">Live</div>
+                <div class="card-badge">Live</div>
             </div>
             <div class="chart-container" id="equity-chart"></div>
         </div>
         <div class="card">
             <div class="card-header">
                 <div class="card-title">Price Chart</div>
-                <div class="card-badge" id="price-badge">BTC</div>
+                <div class="card-badge">BTC</div>
             </div>
             <div class="chart-container" id="price-chart"></div>
         </div>
     </div>
 
-    <!-- Open Positions -->
-    <div class="card">
-        <div class="card-header">
-            <div class="card-title">Open Positions</div>
-            <div class="card-badge" id="positions-count">0</div>
-        </div>
-        <div style="overflow-x: auto; max-height: 400px;">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Symbol</th>
-                        <th>Side</th>
-                        <th>Size</th>
-                        <th>Entry</th>
-                        <th>Current</th>
-                        <th>PnL</th>
-                        <th>PnL %</th>
-                        <th>Lev</th>
-                        <th>SL / TP</th>
-                        <th>Strategy</th>
-                    </tr>
-                </thead>
-                <tbody id="positions-table">
-                    <tr><td colspan="10" class="empty-state">No open positions</td></tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
     <!-- Recent Trades -->
-    <div class="card">
+    <div class="card content-full">
         <div class="card-header">
             <div class="card-title">Recent Trades</div>
             <div class="card-badge" id="trades-count">0</div>
@@ -148,7 +150,7 @@
     </div>
 
     <!-- Strategies -->
-    <div class="card" style="grid-column: 1 / -1;">
+    <div class="card content-full">
         <div class="card-header">
             <div class="card-title">Active Strategies</div>
             <div class="card-badge" id="strategies-count">0</div>
@@ -157,11 +159,11 @@
             <div class="empty-state">Loading strategies...</div>
         </div>
     </div>
-</main>
+</div>
 
 <!-- Footer -->
 <footer class="footer">
-    Hyperliquid Trading Bot &mdash; Built with <span>&hearts;</span> &mdash; Real-time data via WebSocket
+    Hyperliquid Trading Bot &mdash; <span>Automated</span> &mdash; Real-time data
 </footer>
 
 <script src="/static/app.js"></script>
