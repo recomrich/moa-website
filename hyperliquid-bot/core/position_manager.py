@@ -113,6 +113,9 @@ class PositionManager:
             logger.warning(f"Position not found: {position_id}")
             return None
 
+        # Cooldown redémarre à la fermeture (pas à l'ouverture)
+        self._last_trade_time[position.symbol] = time.time()
+
         if position.side == OrderSide.BUY:
             pnl = (exit_price - position.entry_price) * position.size
         else:
