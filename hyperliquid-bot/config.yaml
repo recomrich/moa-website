@@ -99,12 +99,14 @@ strategies:
   cycle_trader:
     enabled: true
     timeframe: "15m"
-    lookback_days: 30
-    buy_zone_pct: 25             # plus strict: bas 25% (etait 30%)
-    sell_zone_pct: 25            # plus strict: haut 25% (etait 30%)
-    min_range_pct: 8.0
-    rsi_buy_max: 45              # RSI < 45 pour acheter (etait 50 = trop large)
-    rsi_sell_min: 55             # RSI > 55 pour shorter (etait 50 = trop large)
+    lookback_days: 45             # analyse 45 jours de cycles passes
+    min_cycles: 4                 # minimum 4 cycles complets pour etre fiable
+    min_reliability: 40           # fiabilite minimum 40% pour trader
+    duration_threshold: 0.8       # achete quand 80% du cycle baissier est fait
+    amplitude_proximity: 0.65     # achete quand la baisse atteint 65% de la baisse moyenne
+    min_swing_pct: 1.0            # ignore les mouvements < 1% (bruit)
+    rsi_buy_max: 45               # RSI < 45 pour acheter (bas du cycle)
+    rsi_sell_min: 55              # RSI > 55 pour shorter (haut du cycle)
 
 dashboard:
   enabled: true
