@@ -91,8 +91,9 @@ class TradingBot:
         # Position manager: allow multiple positions per crypto
         risk_cfg_pos = config.get("risk", {})
         self._position_manager = PositionManager(
-            max_per_symbol=risk_cfg_pos.get("max_positions_per_symbol", 3),
+            max_per_symbol=risk_cfg_pos.get("max_positions_per_symbol", 1),
             cooldown_minutes=risk_cfg_pos.get("cooldown_minutes", 30),
+            trailing_stop_pct=risk_cfg_pos.get("trailing_stop_pct", 1.5),
         )
         self._portfolio = Portfolio(initial_capital=10_000.0)
 

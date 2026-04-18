@@ -29,6 +29,7 @@ class Position:
     position_id: str = ""
     sl_order_id: Optional[str] = None
     tp_order_id: Optional[str] = None
+    peak_price: float = 0.0  # highest price seen for longs, lowest for shorts
 
     @property
     def pnl_pct(self) -> float:
@@ -45,11 +46,17 @@ class Position:
 class PositionManager:
     """Manages open positions and monitors stop-loss/take-profit."""
 
-    def __init__(self, max_per_symbol: int = 1, cooldown_minutes: int = 30) -> None:
+    def __init__(
+        self,
+        max_per_symbol: int = 1,
+        cooldown_minutes: int = 30,
+        trailing_stop_pct: float = 1.5,
+    ) -> None:
         self._positions: dict[str, Position] = {}
         self._closed_positions: list[dict] = []
         self._max_per_symbol = max_per_symbol
         self._cooldown_seconds = cooldown_minutes * 60
+        self._trailing_stop_pct = trailing_stop_pct  # % sous le pic pour activer la sortie
         self._position_counter = 0
         self._last_trade_time: dict[str, float] = {}
 
@@ -62,12 +69,14 @@ class PositionManager:
         """Register a new open position."""
         key = self._next_key(position.symbol, position.strategy_name)
         position.position_id = key
+        position.peak_price = position.entry_price
         self._positions[key] = position
         self._last_trade_time[position.symbol] = time.time()
         logger.info(
             f"Position opened: {position.symbol} {position.side.value} "
             f"size={position.size} entry={position.entry_price} "
             f"SL={position.stop_loss} TP={position.take_profit} "
+            f"trailing={self._trailing_stop_pct}% "
             f"(id={key})"
         )
 
@@ -180,21 +189,42 @@ class PositionManager:
                 triggered.append(pos_id)
                 continue
 
-            # Trailing stop: only activate after position is 0.5%+ in profit
-            if pos.stop_loss and profit_pct >= 0.5:
-                old_sl = pos.stop_loss
-                trail_distance = abs(pos.entry_price - pos.stop_loss)
+            # Trailing stop: % fixe sous/sur le pic atteint, activé après 0.5% de profit
+            # Exemple: trailing 1.5% -> si BTC monte à 80000, SL = 80000 * 0.985 = 78800
+            if profit_pct >= 0.5 and self._trailing_stop_pct > 0:
+                trail_mult = self._trailing_stop_pct / 100.0
                 if pos.side == OrderSide.BUY:
-                    new_sl = current_price - trail_distance
-                    if new_sl > pos.stop_loss:
-                        pos.stop_loss = round(new_sl, 6)
+                    # Mettre à jour le pic le plus haut atteint
+                    if current_price > pos.peak_price:
+                        pos.peak_price = current_price
+                    # SL = pic - trailing%
+                    trailing_sl = round(pos.peak_price * (1 - trail_mult), 6)
+                    if pos.stop_loss is None or trailing_sl > pos.stop_loss:
+                        old_sl = pos.stop_loss or 0
+                        pos.stop_loss = trailing_sl
+                        if old_sl > 0 and abs(trailing_sl - old_sl) / old_sl > 0.005:
+                            sl_updated.append(pos_id)
+                            logger.info(
+                                f"Trailing SL {pos.symbol}: "
+                                f"pic=${pos.peak_price:.2f} -> SL=${trailing_sl:.2f} "
+                                f"({self._trailing_stop_pct}% sous le pic)"
+                            )
                 else:
-                    new_sl = current_price + trail_distance
-                    if new_sl < pos.stop_loss:
-                        pos.stop_loss = round(new_sl, 6)
-
-                if old_sl > 0 and abs(pos.stop_loss - old_sl) / old_sl > 0.005:
-                    sl_updated.append(pos_id)
+                    # SHORT: on suit le prix le plus bas atteint
+                    if pos.peak_price == pos.entry_price or current_price < pos.peak_price:
+                        pos.peak_price = current_price
+                    # SL = creux + trailing%
+                    trailing_sl = round(pos.peak_price * (1 + trail_mult), 6)
+                    if pos.stop_loss is None or trailing_sl < pos.stop_loss:
+                        old_sl = pos.stop_loss or 0
+                        pos.stop_loss = trailing_sl
+                        if old_sl > 0 and abs(trailing_sl - old_sl) / old_sl > 0.005:
+                            sl_updated.append(pos_id)
+                            logger.info(
+                                f"Trailing SL {pos.symbol}: "
+                                f"creux=${pos.peak_price:.2f} -> SL=${trailing_sl:.2f} "
+                                f"({self._trailing_stop_pct}% sur le creux)"
+                            )
 
             # Check stop-loss
             if pos.stop_loss:
