@@ -358,39 +358,42 @@ class TradingBot:
             self._process_pair(pair, prices)
 
     def _process_pair(self, pair: dict, prices: dict[str, float]) -> None:
-        """Process strategies for a single trading pair."""
+        """Process strategies for a single trading pair using consensus.
+
+        All strategies vote first, then only open a position if 2+ agree.
+        This prevents 5 separate positions on the same symbol.
+        """
         symbol = pair["symbol"]
         is_perp = pair["is_perp"]
         leverage = pair["leverage"]
         pair_strategies = pair["strategies"]
+
+        if not self._position_manager.can_open_for_symbol(symbol):
+            return
+
+        if not self._risk_manager.can_open_position(
+            self._position_manager.open_count
+        ):
+            return
+
+        from strategies.strategy_manager import CONFIRMATION_TIMEFRAMES
+
+        buy_votes: list[tuple[str, int]] = []
+        sell_votes: list[tuple[str, int]] = []
+        best_strategy_name = None
+        best_confidence = 0
 
         for strategy_name in pair_strategies:
             strategy = self._strategy_manager.get_strategy(strategy_name)
             if not strategy or not strategy.enabled:
                 continue
 
-            # Check if we can open another position on this symbol
-            if not self._position_manager.can_open_for_symbol(
-                symbol, strategy_name
-            ):
-                continue
-
-            # Check global risk limits
-            if not self._risk_manager.can_open_position(
-                self._position_manager.open_count
-            ):
-                continue
-
-            # Get market data
             df = self._cache.get_or_fetch(
                 symbol, strategy.timeframe, self._feed.get_ohlcv
             )
             if df.empty:
-                logger.warning(f"No candle data for {symbol} ({strategy.timeframe})")
                 continue
 
-            # Get higher timeframe data for confirmation
-            from strategies.strategy_manager import CONFIRMATION_TIMEFRAMES
             htf = CONFIRMATION_TIMEFRAMES.get(strategy.timeframe)
             higher_tf_df = None
             if htf:
@@ -398,7 +401,6 @@ class TradingBot:
                     symbol, htf, self._feed.get_ohlcv
                 )
 
-            # Generate signal with multi-timeframe + regime confirmation
             signal, confidence = self._strategy_manager.run_with_confirmation(
                 strategy_name, df, higher_tf_df, symbol
             )
@@ -410,53 +412,84 @@ class TradingBot:
             if signal is None or signal == Signal.HOLD:
                 continue
 
-            # Record strategy run
             self._repository.save_strategy_run(
                 strategy_name, symbol, strategy.timeframe, signal.value
             )
 
-            # Dynamic leverage based on confidence
-            actual_leverage = self._calculate_leverage(
-                leverage, confidence, is_perp
-            )
+            if signal == Signal.BUY:
+                buy_votes.append((strategy_name, confidence))
+            elif signal == Signal.SELL:
+                sell_votes.append((strategy_name, confidence))
 
-            # Execute signal
-            self._execute_signal(
-                signal, symbol, strategy, df, is_perp, actual_leverage
-            )
+        min_votes = 2
+        chosen_signal = None
+        votes = []
+
+        if len(buy_votes) >= min_votes and len(buy_votes) >= len(sell_votes):
+            chosen_signal = Signal.BUY
+            votes = buy_votes
+        elif len(sell_votes) >= min_votes:
+            chosen_signal = Signal.SELL
+            votes = sell_votes
+
+        if chosen_signal is None:
+            if buy_votes:
+                logger.debug(
+                    f"[CONSENSUS] {symbol}: only {len(buy_votes)} BUY vote(s), need {min_votes}"
+                )
+            if sell_votes:
+                logger.debug(
+                    f"[CONSENSUS] {symbol}: only {len(sell_votes)} SELL vote(s), need {min_votes}"
+                )
+            return
+
+        best_strategy_name = max(votes, key=lambda x: x[1])[0]
+        avg_confidence = sum(c for _, c in votes) // len(votes)
+        strategy = self._strategy_manager.get_strategy(best_strategy_name)
+
+        logger.info(
+            f"[CONSENSUS] {symbol} {chosen_signal.value} confirmed by "
+            f"{len(votes)} strategies: {[v[0] for v in votes]} "
+            f"(avg confidence={avg_confidence}%)"
+        )
+
+        df = self._cache.get_or_fetch(
+            symbol, strategy.timeframe, self._feed.get_ohlcv
+        )
+
+        actual_leverage = self._calculate_leverage(
+            leverage, avg_confidence, is_perp
+        )
+
+        self._execute_signal(
+            chosen_signal, symbol, strategy, df, is_perp, actual_leverage
+        )
 
     def _calculate_leverage(
         self, base_leverage: int, confidence: int, is_perp: bool
     ) -> int:
         """Calculate dynamic leverage based on signal confidence.
 
-        Confidence tiers:
-            85-100% -> max leverage (20x)
-            70-84%  -> high leverage (15x)
-            50-69%  -> medium leverage (10x)
-            30-49%  -> base leverage from config
-            <30%    -> minimum (1x)
+        Conservative tiers:
+            85-100% -> base leverage from config (3x)
+            70-84%  -> base leverage (3x)
+            50-69%  -> reduced (2x)
+            <50%    -> minimum (1x)
 
         Only applies to perps. Spot always uses 1x.
         """
         if not is_perp:
             return 1
 
-        leverage_cfg = self._config.get("risk", {})
-        max_lev = leverage_cfg.get("max_leverage", 20)
-
-        if confidence >= 85:
-            lev = max_lev           # 20x - very strong signal
-        elif confidence >= 70:
-            lev = min(15, max_lev)  # 15x - strong signal
+        if confidence >= 70:
+            lev = base_leverage
         elif confidence >= 50:
-            lev = min(10, max_lev)  # 10x - decent signal
+            lev = max(1, base_leverage - 1)
         else:
-            lev = base_leverage     # config default (3x-5x)
+            lev = 1
 
         logger.info(
-            f"Dynamic leverage: confidence={confidence}% -> {lev}x "
-            f"(base={base_leverage}x, max={max_lev}x)"
+            f"Leverage: confidence={confidence}% -> {lev}x (base={base_leverage}x)"
         )
         return lev
 

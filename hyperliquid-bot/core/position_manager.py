@@ -45,12 +45,13 @@ class Position:
 class PositionManager:
     """Manages open positions and monitors stop-loss/take-profit."""
 
-    def __init__(self, max_per_symbol: int = 3, cooldown_minutes: int = 30) -> None:
+    def __init__(self, max_per_symbol: int = 1, cooldown_minutes: int = 30) -> None:
         self._positions: dict[str, Position] = {}
         self._closed_positions: list[dict] = []
         self._max_per_symbol = max_per_symbol
         self._cooldown_seconds = cooldown_minutes * 60
         self._position_counter = 0
+        self._last_trade_time: dict[str, float] = {}
 
     def _next_key(self, symbol: str, strategy_name: str) -> str:
         """Generate a unique position key."""
@@ -62,6 +63,7 @@ class PositionManager:
         key = self._next_key(position.symbol, position.strategy_name)
         position.position_id = key
         self._positions[key] = position
+        self._last_trade_time[position.symbol] = time.time()
         logger.info(
             f"Position opened: {position.symbol} {position.side.value} "
             f"size={position.size} entry={position.entry_price} "
@@ -74,25 +76,18 @@ class PositionManager:
 
         Checks:
         1. Not exceeding max positions per symbol.
-        2. Cooldown since last entry on this symbol+strategy.
+        2. GLOBAL cooldown since last trade on this symbol (any strategy).
         """
-        # Count open positions for this symbol
         symbol_count = sum(
             1 for p in self._positions.values() if p.symbol == symbol
         )
         if symbol_count >= self._max_per_symbol:
             return False
 
-        # Check cooldown: don't open same symbol+strategy too fast
-        if strategy_name:
-            now = time.time()
-            for p in self._positions.values():
-                if (
-                    p.symbol == symbol
-                    and p.strategy_name == strategy_name
-                    and (now - p.opened_at) < self._cooldown_seconds
-                ):
-                    return False
+        now = time.time()
+        last_trade = self._last_trade_time.get(symbol, 0)
+        if (now - last_trade) < self._cooldown_seconds:
+            return False
 
         return True
 
@@ -167,8 +162,26 @@ class PositionManager:
                     (pos.entry_price - current_price) * pos.size * pos.leverage
                 )
 
-            # Trailing stop: move SL in profit direction
-            if pos.stop_loss:
+            # Calculate profit percentage for this position
+            if pos.entry_price > 0:
+                if pos.side == OrderSide.BUY:
+                    profit_pct = ((current_price - pos.entry_price) / pos.entry_price) * 100
+                else:
+                    profit_pct = ((pos.entry_price - current_price) / pos.entry_price) * 100
+            else:
+                profit_pct = 0.0
+
+            # Emergency exit: close if leveraged loss exceeds 5%
+            if profit_pct < 0 and abs(profit_pct) * pos.leverage >= 5.0:
+                logger.warning(
+                    f"Emergency exit {pos.symbol}: "
+                    f"loss={abs(profit_pct) * pos.leverage:.1f}% (leveraged)"
+                )
+                triggered.append(pos_id)
+                continue
+
+            # Trailing stop: only activate after position is 0.5%+ in profit
+            if pos.stop_loss and profit_pct >= 0.5:
                 old_sl = pos.stop_loss
                 trail_distance = abs(pos.entry_price - pos.stop_loss)
                 if pos.side == OrderSide.BUY:
@@ -180,7 +193,6 @@ class PositionManager:
                     if new_sl < pos.stop_loss:
                         pos.stop_loss = round(new_sl, 6)
 
-                # Track if SL moved significantly (>0.5%) for exchange update
                 if old_sl > 0 and abs(pos.stop_loss - old_sl) / old_sl > 0.005:
                     sl_updated.append(pos_id)
 
@@ -201,6 +213,16 @@ class PositionManager:
                 if pos.side == OrderSide.SELL and current_price <= pos.take_profit:
                     triggered.append(pos_id)
                     continue
+
+            # Time-based exit: close after 24h if not profitable
+            age_hours = (time.time() - pos.opened_at) / 3600
+            if age_hours >= 24 and profit_pct <= 0:
+                logger.info(
+                    f"Time exit {pos.symbol}: open {age_hours:.0f}h, "
+                    f"PnL={profit_pct:.1f}%"
+                )
+                triggered.append(pos_id)
+                continue
 
         return triggered, sl_updated
 
