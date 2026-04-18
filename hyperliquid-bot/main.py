@@ -422,25 +422,31 @@ class TradingBot:
             elif signal == Signal.SELL:
                 sell_votes.append((strategy_name, confidence))
 
-        min_votes = 2
         chosen_signal = None
         votes = []
 
-        if len(buy_votes) >= min_votes and len(buy_votes) >= len(sell_votes):
+        # 2+ strategies agree = trade (any confidence)
+        # OR 1 strategy with confidence >= 60% = trade alone
+        if len(buy_votes) >= 2 and len(buy_votes) >= len(sell_votes):
             chosen_signal = Signal.BUY
             votes = buy_votes
-        elif len(sell_votes) >= min_votes:
+        elif len(sell_votes) >= 2:
+            chosen_signal = Signal.SELL
+            votes = sell_votes
+        elif len(buy_votes) == 1 and buy_votes[0][1] >= 60:
+            chosen_signal = Signal.BUY
+            votes = buy_votes
+        elif len(sell_votes) == 1 and sell_votes[0][1] >= 60:
             chosen_signal = Signal.SELL
             votes = sell_votes
 
         if chosen_signal is None:
-            if buy_votes:
+            all_votes = buy_votes + sell_votes
+            if all_votes:
                 logger.debug(
-                    f"[CONSENSUS] {symbol}: only {len(buy_votes)} BUY vote(s), need {min_votes}"
-                )
-            if sell_votes:
-                logger.debug(
-                    f"[CONSENSUS] {symbol}: only {len(sell_votes)} SELL vote(s), need {min_votes}"
+                    f"[CONSENSUS] {symbol}: pas assez de votes - "
+                    f"BUY={[(n, c) for n, c in buy_votes]} "
+                    f"SELL={[(n, c) for n, c in sell_votes]}"
                 )
             return
 

@@ -98,7 +98,7 @@ strategies:
     rsi_max_sell: 55
   cycle_trader:
     enabled: true
-    timeframe: "15m"
+    timeframe: "1d"               # bougies JOURNALIERES (500 jours de data!)
     lookback_days: 45             # analyse 45 jours de cycles passes
     min_cycles: 4                 # minimum 4 cycles complets pour etre fiable
     min_reliability: 40           # fiabilite minimum 40% pour trader

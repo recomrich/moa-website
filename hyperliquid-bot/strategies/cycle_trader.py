@@ -111,21 +111,27 @@ class CycleTraderStrategy(BaseStrategy):
 
     def generate_signal(self, df: pd.DataFrame) -> Signal:
         """Analyze cycles in historical data and generate a trading signal."""
-        if len(df) < 96:  # need at least ~1 day of 15m candles
+        if len(df) < 15:
+            logger.debug(f"[{self.name}] Not enough daily bars ({len(df)})")
             return Signal.HOLD
 
-        # Build daily OHLC from intraday candles
-        daily = self._build_daily(df)
-        if daily is None or len(daily) < 10:
-            logger.debug(f"[{self.name}] Not enough daily bars ({0 if daily is None else len(daily)})")
-            return Signal.HOLD
+        # With timeframe "1d", df is already daily data - use directly
+        if self.timeframe == "1d":
+            daily = df.copy()
+            if "close" not in daily.columns:
+                return Signal.HOLD
+        else:
+            daily = self._build_daily(df)
+            if daily is None or len(daily) < 10:
+                logger.debug(f"[{self.name}] Not enough daily bars")
+                return Signal.HOLD
 
         # Run cycle analysis on the daily data
         analysis = self._analyze_cycles(daily)
         if analysis is None:
             return Signal.HOLD
 
-        # Current price and indicators from the intraday data
+        # Current price and indicators
         current_close = float(df["close"].iloc[-1])
         rsi_vals = rsi(df, period=self._rsi_period)
         current_rsi = float(rsi_vals.iloc[-1]) if rsi_vals is not None and not rsi_vals.empty else 50.0
