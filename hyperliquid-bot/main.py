@@ -343,6 +343,10 @@ class TradingBot:
                     if strategy:
                         strategy.record_result(won)
 
+        # 2b. Sync positions from exchange and verify SL/TP
+        if not self._paper_mode and self._client.is_connected:
+            self._sync_and_protect_positions(prices)
+
         # 3. Update portfolio
         self._portfolio.check_new_day()
         unrealized = self._position_manager.get_total_unrealized_pnl()
@@ -353,6 +357,85 @@ class TradingBot:
         if self._risk_manager.is_halted:
             logger.warning("Trading halted by risk manager")
             return
+
+    def _sync_and_protect_positions(self, prices: dict[str, float]) -> None:
+        """Sync positions from exchange and ensure every position has SL/TP.
+
+        Runs every tick in live mode. If a position exists on the exchange
+        but has no SL/TP orders, it places them automatically.
+        """
+        try:
+            from indicators.volatility import atr as calc_atr
+
+            user_state = self._client.get_user_state()
+            if not user_state:
+                return
+
+            open_orders = self._client.get_frontend_open_orders()
+            protected_symbols = set()
+            for order in open_orders:
+                coin = order.get("coin", "")
+                otype = str(order.get("orderType", "")).lower()
+                # Trigger orders = SL/TP protection
+                if any(k in otype for k in ["trigger", "stop", "take", "tp", "sl"]):
+                    protected_symbols.add(coin)
+                # Also check by reduceOnly flag (SL/TP are always reduce-only)
+                if order.get("reduceOnly", False):
+                    protected_symbols.add(coin)
+
+            exchange_positions = user_state.get("assetPositions", [])
+            for pos_data in exchange_positions:
+                position = pos_data.get("position", {})
+                symbol = position.get("coin", "")
+                size = float(position.get("szi", 0))
+                if size == 0 or not symbol:
+                    continue
+
+                entry_price = float(position.get("entryPx", 0))
+                is_long = size > 0
+                abs_size = abs(size)
+
+                has_protection = symbol in protected_symbols
+                if has_protection:
+                    continue
+
+                current_price = prices.get(symbol, entry_price)
+                if current_price <= 0:
+                    continue
+
+                # Calculate SL/TP based on 2% distance
+                sl_pct = 0.02
+                tp_pct = 0.03
+                if is_long:
+                    sl_price = round(entry_price * (1 - sl_pct), 6)
+                    tp_price = round(entry_price * (1 + tp_pct), 6)
+                    side = OrderSide.BUY
+                else:
+                    sl_price = round(entry_price * (1 + sl_pct), 6)
+                    tp_price = round(entry_price * (1 - tp_pct), 6)
+                    side = OrderSide.SELL
+
+                logger.warning(
+                    f"Position {symbol} has NO SL/TP! "
+                    f"Placing SL={sl_price} TP={tp_price} automatically"
+                )
+                sl_oid, tp_oid = self._order_manager.place_tp_sl(
+                    symbol, side, abs_size, sl_price, tp_price,
+                )
+                if sl_oid or tp_oid:
+                    logger.info(
+                        f"Auto-protection placed for {symbol}: "
+                        f"SL={sl_price} (oid={sl_oid}) "
+                        f"TP={tp_price} (oid={tp_oid})"
+                    )
+                else:
+                    logger.error(
+                        f"FAILED to place SL/TP for {symbol}! "
+                        f"Position is UNPROTECTED"
+                    )
+
+        except Exception as e:
+            logger.error(f"Sync/protect error: {e}")
 
         # 5. Run strategies for each trading pair
         for pair in self._trading_pairs:
@@ -557,10 +640,26 @@ class TradingBot:
         filled_order = self._order_manager.place_order(order)
 
         if filled_order.fill_price:
-            # Place TP/SL trigger orders on the exchange
-            sl_oid, tp_oid = self._order_manager.place_tp_sl(
-                symbol, side, filled_order.size or size, sl, tp,
-            )
+            # Place TP/SL trigger orders on the exchange (with retry)
+            sl_oid, tp_oid = None, None
+            for attempt in range(3):
+                sl_oid, tp_oid = self._order_manager.place_tp_sl(
+                    symbol, side, filled_order.size or size, sl, tp,
+                )
+                if sl_oid or tp_oid:
+                    break
+                logger.warning(
+                    f"SL/TP placement failed attempt {attempt + 1}/3 "
+                    f"for {symbol} - retrying..."
+                )
+                import time as _time
+                _time.sleep(1)
+
+            if not sl_oid and not tp_oid:
+                logger.error(
+                    f"CRITICAL: Could not place SL/TP for {symbol}! "
+                    f"Position is UNPROTECTED. SL={sl} TP={tp}"
+                )
 
             # Record position with exchange TP/SL order IDs
             position = Position(

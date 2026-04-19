@@ -141,6 +141,18 @@ class HyperliquidClient:
             return []
         return self._api_call_with_retry(self._info.open_orders, addr)
 
+    def get_frontend_open_orders(self, address: Optional[str] = None) -> list:
+        """Get all open orders including trigger orders (SL/TP)."""
+        addr = address or self._account_address
+        if not self._info or not addr:
+            return []
+        try:
+            return self._api_call_with_retry(
+                self._info.frontend_open_orders, addr
+            )
+        except Exception:
+            return self.get_open_orders(addr)
+
     def get_all_mids(self) -> dict[str, str]:
         """Get mid prices for all assets."""
         if not self._info:
