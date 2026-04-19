@@ -392,8 +392,31 @@ class TradingBot:
                     continue
 
                 entry_price = float(position.get("entryPx", 0))
+                leverage_data = position.get("leverage", {})
+                leverage = int(leverage_data.get("value", 1))
                 is_long = size > 0
                 abs_size = abs(size)
+                side = OrderSide.BUY if is_long else OrderSide.SELL
+
+                # Sync to position_manager for trailing stop
+                sync_key = f"{symbol}_exchange"
+                if not self._position_manager.get_position(sync_key):
+                    synced_pos = Position(
+                        symbol=symbol,
+                        side=side,
+                        size=abs_size,
+                        entry_price=entry_price,
+                        leverage=leverage,
+                        is_perp=True,
+                        strategy_name="exchange",
+                        position_id=sync_key,
+                    )
+                    synced_pos.peak_price = entry_price
+                    self._position_manager._positions[sync_key] = synced_pos
+                    logger.info(
+                        f"Synced {symbol} from exchange for trailing stop: "
+                        f"{side.value} size={abs_size} entry={entry_price} {leverage}x"
+                    )
 
                 has_protection = symbol in protected_symbols
                 if has_protection:
@@ -409,11 +432,9 @@ class TradingBot:
                 if is_long:
                     sl_price = round(entry_price * (1 - sl_pct), 6)
                     tp_price = round(entry_price * (1 + tp_pct), 6)
-                    side = OrderSide.BUY
                 else:
                     sl_price = round(entry_price * (1 + sl_pct), 6)
                     tp_price = round(entry_price * (1 - tp_pct), 6)
-                    side = OrderSide.SELL
 
                 logger.warning(
                     f"Position {symbol} has NO SL/TP! "
@@ -423,6 +444,13 @@ class TradingBot:
                     symbol, side, abs_size, sl_price, tp_price,
                 )
                 if sl_oid or tp_oid:
+                    # Update the synced position with SL/TP order IDs
+                    synced = self._position_manager.get_position(sync_key)
+                    if synced:
+                        synced.stop_loss = sl_price
+                        synced.take_profit = tp_price
+                        synced.sl_order_id = sl_oid
+                        synced.tp_order_id = tp_oid
                     logger.info(
                         f"Auto-protection placed for {symbol}: "
                         f"SL={sl_price} (oid={sl_oid}) "
