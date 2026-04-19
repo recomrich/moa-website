@@ -82,6 +82,8 @@ class OrderManager:
 
     def _round_size(self, symbol: str, size: float, price: float) -> float:
         """Round order size to valid precision for Hyperliquid."""
+        size = float(size)
+        price = float(price)
         decimals = self.SIZE_DECIMALS.get(symbol, 2)
         rounded = round(size, decimals)
 
@@ -207,19 +209,10 @@ class OrderManager:
         self, symbol: str, is_buy: bool, size: float,
         trigger_price: float, tpsl: str, reduce_only: bool = True
     ) -> Optional[str]:
-        """Place a trigger order (TP or SL) on Hyperliquid.
+        """Place a trigger order (TP or SL) on Hyperliquid."""
+        trigger_price = float(trigger_price)
+        size = float(size)
 
-        Args:
-            symbol: Trading pair symbol.
-            is_buy: True for buy, False for sell.
-            size: Order size.
-            trigger_price: Price at which the order triggers.
-            tpsl: "tp" for take-profit, "sl" for stop-loss.
-            reduce_only: Whether this order only reduces a position.
-
-        Returns:
-            Exchange order ID if successful, None otherwise.
-        """
         if self._paper_mode:
             fake_id = f"paper_{tpsl}_{str(uuid.uuid4())[:6]}"
             logger.info(
