@@ -5,7 +5,7 @@ bot:
 risk:
   max_risk_per_trade_pct: 1.0     # risquer 1% par trade (etait 1.5% = trop)
   max_drawdown_pct: 10.0          # drawdown max 10% avant arret (etait 15% = trop)
-  max_open_positions: 5           # max 5 positions total (etait 15 = beaucoup trop)
+  max_open_positions: 50          # pas de limite pratique (9 perps + 3 spot = 12 max)
   max_positions_per_symbol: 1     # 1 seule position par crypto (etait 3 = spam)
   cooldown_minutes: 30            # 30 min entre trades sur meme symbole (etait 10)
   max_leverage: 10                # max 10x (etait 20x = trop risque)
