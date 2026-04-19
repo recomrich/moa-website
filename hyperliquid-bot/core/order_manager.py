@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -79,6 +80,24 @@ class OrderManager:
         "WIF": 0,
     }
     MIN_ORDER_VALUE = 10.0  # Minimum $10 order
+
+    @classmethod
+    def _round_price(cls, symbol: str, price: float) -> float:
+        """Round price to Hyperliquid's precision: max 5 sig figs,
+        max (6 - szDecimals) decimal places for perps."""
+        price = float(price)
+        if price <= 0:
+            return price
+        sz_decimals = cls.SIZE_DECIMALS.get(symbol, 2)
+        max_decimals = max(0, 6 - sz_decimals)
+        # Max 5 significant figures
+        if price >= 1:
+            int_digits = int(math.floor(math.log10(price))) + 1
+            sig_decimals = max(0, 5 - int_digits)
+        else:
+            sig_decimals = 5
+        decimals = min(max_decimals, sig_decimals)
+        return round(price, decimals)
 
     def _round_size(self, symbol: str, size: float, price: float) -> float:
         """Round order size to valid precision for Hyperliquid."""
@@ -166,12 +185,13 @@ class OrderManager:
 
             if order.order_type == OrderType.MARKET:
                 result = exchange.market_open(
-                    order.symbol, is_buy, order.size, None
+                    order.symbol, is_buy, float(order.size), None
                 )
             else:
+                rounded_price = self._round_price(order.symbol, float(order.price))
                 result = exchange.order(
-                    order.symbol, is_buy, order.size,
-                    order.price, {"limit": {"tif": "Gtc"}}
+                    order.symbol, is_buy, float(order.size),
+                    rounded_price, {"limit": {"tif": "Gtc"}}
                 )
 
             if result.get("status") == "ok":
@@ -235,9 +255,12 @@ class OrderManager:
             if size <= 0:
                 return None
 
+            # Round price to Hyperliquid precision (critical - SDK will fail otherwise)
+            trigger_price = self._round_price(symbol, trigger_price)
+
             order_type = {
                 "trigger": {
-                    "triggerPx": str(round(trigger_price, 2)),
+                    "triggerPx": trigger_price,
                     "isMarket": True,
                     "tpsl": tpsl,
                 }
