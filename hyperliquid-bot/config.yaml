@@ -1,15 +1,15 @@
 bot:
-  mode: "paper"  # "paper" (simulation) or "live" (real trading)
-  update_interval: 30  # 30 secondes entre chaque cycle (etait 5 = trop rapide)
+  mode: "live"  # "paper" (simulation) ou "live" (vrai argent)
+  update_interval: 30  # 30 secondes entre chaque cycle
 
 risk:
-  max_risk_per_trade_pct: 1.0     # risquer 1% par trade (etait 1.5% = trop)
-  max_drawdown_pct: 10.0          # drawdown max 10% avant arret (etait 15% = trop)
-  max_open_positions: 50          # pas de limite pratique (9 perps + 3 spot = 12 max)
-  max_positions_per_symbol: 1     # 1 seule position par crypto (etait 3 = spam)
-  cooldown_minutes: 30            # 30 min entre trades sur meme symbole (etait 10)
-  max_leverage: 10                # max 10x (etait 20x = trop risque)
-  min_reward_risk_ratio: 1.5      # R:R minimum 1.5 (etait 1.3 = pas assez)
+  max_risk_per_trade_pct: 1.0     # risquer 1% par trade max
+  max_drawdown_pct: 10.0          # drawdown max 10% avant arret
+  max_open_positions: 50          # pas de limite pratique
+  max_positions_per_symbol: 1     # 1 seule position par crypto
+  cooldown_minutes: 30            # 30 min entre trades sur meme symbole
+  max_leverage: 10                # max 10x
+  min_reward_risk_ratio: 1.5      # R:R minimum 1.5
   trailing_stop_pct: 1.5          # trailing stop: SL suit le prix a 1.5% sous le pic
 
 trading_pairs:
@@ -90,10 +90,10 @@ strategies:
     timeframe: "15m"
     ema_fast: 9
     ema_slow: 21
-    momentum_pct: 2.0            # 2% minimum (etait 1.5% = trop sensible)
-    lookback_candles: 6           # 6 bougies = 1h30 (etait 4 = trop court)
+    momentum_pct: 2.0
+    lookback_candles: 6
     rsi_min_buy: 45
-    rsi_max_buy: 68              # plus strict (etait 72)
+    rsi_max_buy: 68
     rsi_min_sell: 32
     rsi_max_sell: 55
   cycle_trader:
