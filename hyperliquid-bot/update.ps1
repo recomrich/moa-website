@@ -8,6 +8,7 @@ $dest = "C:\Users\rsser\hyperliquid-bot"
 
 $files = @(
     "main.py",
+    "CLAUDE.md",
     "core/__init__.py",
     "core/client.py",
     "core/order_manager.py",
