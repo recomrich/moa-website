@@ -121,8 +121,6 @@ class PositionManager:
         else:
             pnl = (position.entry_price - exit_price) * position.size
 
-        pnl *= position.leverage
-
         result = {
             "symbol": position.symbol,
             "side": position.side.value,
@@ -167,11 +165,11 @@ class PositionManager:
 
             if pos.side == OrderSide.BUY:
                 pos.unrealized_pnl = (
-                    (current_price - pos.entry_price) * pos.size * pos.leverage
+                    (current_price - pos.entry_price) * pos.size
                 )
             else:
                 pos.unrealized_pnl = (
-                    (pos.entry_price - current_price) * pos.size * pos.leverage
+                    (pos.entry_price - current_price) * pos.size
                 )
 
             # Calculate profit percentage for this position
@@ -184,10 +182,9 @@ class PositionManager:
                 profit_pct = 0.0
 
             # Emergency exit: close if leveraged loss exceeds 5%
-            if profit_pct < 0 and abs(profit_pct) * pos.leverage >= 5.0:
+            if profit_pct < 0 and abs(profit_pct) >= 5.0:
                 logger.warning(
-                    f"Emergency exit {pos.symbol}: "
-                    f"loss={abs(profit_pct) * pos.leverage:.1f}% (leveraged)"
+                    f"Emergency exit {pos.symbol}: loss={abs(profit_pct):.1f}%"
                 )
                 triggered.append(pos_id)
                 continue
