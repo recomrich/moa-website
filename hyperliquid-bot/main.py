@@ -351,7 +351,12 @@ class TradingBot:
         self._portfolio.check_new_day()
         unrealized = self._position_manager.get_total_unrealized_pnl()
         self._portfolio.update_paper(unrealized)
-        self._risk_manager.update_capital(self._portfolio.total_value)
+        # Peak base sur paper_balance (realise) pour eviter fausses drawdowns
+        # causees par les spikes de PnL flottant
+        self._risk_manager.update_capital(
+            self._portfolio.total_value,
+            realized_capital=self._portfolio.paper_balance,
+        )
 
         # 4. Check if risk halt
         if self._risk_manager.is_halted:

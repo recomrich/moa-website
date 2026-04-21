@@ -29,20 +29,40 @@ class RiskManager:
         self._halted = False
         self._halt_reason = ""
 
-    def update_capital(self, capital: float) -> None:
-        """Update current capital and track peak for drawdown."""
+    def update_capital(
+        self, capital: float, realized_capital: float | None = None
+    ) -> None:
+        """Update current capital and track peak for drawdown.
+
+        Peak est tracké sur l'equity REALISE (pas le non-realise) pour eviter
+        les fausses drawdowns causees par des spikes de PnL flottant.
+
+        Auto-recovery: le halt se leve quand drawdown retombe sous 70% du seuil.
+        """
         self._current_capital = capital
-        if capital > self._peak_capital:
-            self._peak_capital = capital
+        # Peak base sur l'equity realise (paper_balance en live, sinon capital)
+        peak_reference = realized_capital if realized_capital is not None else capital
+        if peak_reference > self._peak_capital:
+            self._peak_capital = peak_reference
 
         drawdown_pct = self.current_drawdown_pct
+
         if drawdown_pct >= self._config.max_drawdown_pct:
-            self._halted = True
-            self._halt_reason = (
-                f"Max drawdown reached: {drawdown_pct:.2f}% "
-                f"(limit: {self._config.max_drawdown_pct}%)"
+            if not self._halted:
+                self._halted = True
+                self._halt_reason = (
+                    f"Max drawdown reached: {drawdown_pct:.2f}% "
+                    f"(limit: {self._config.max_drawdown_pct}%)"
+                )
+                logger.error(f"RISK HALT: {self._halt_reason}")
+        elif self._halted and drawdown_pct < self._config.max_drawdown_pct * 0.7:
+            # Auto-recovery: drawdown est redescendue sous 70% du seuil
+            logger.info(
+                f"Risk halt auto-recovered: drawdown back to {drawdown_pct:.2f}% "
+                f"(under {self._config.max_drawdown_pct * 0.7:.1f}% threshold)"
             )
-            logger.error(f"RISK HALT: {self._halt_reason}")
+            self._halted = False
+            self._halt_reason = ""
 
     @property
     def current_drawdown_pct(self) -> float:
@@ -70,7 +90,8 @@ class RiskManager:
     def can_open_position(self, open_position_count: int) -> bool:
         """Check if a new position can be opened."""
         if self._halted:
-            logger.warning(f"Trading halted: {self._halt_reason}")
+            # Pas de spam: logger en debug, le halt a deja ete logge en error au moment ou il s'est declenche
+            logger.debug(f"Trading halted: {self._halt_reason}")
             return False
 
         if open_position_count >= self._config.max_open_positions:
