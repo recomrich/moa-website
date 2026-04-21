@@ -189,9 +189,10 @@ class PositionManager:
                 triggered.append(pos_id)
                 continue
 
-            # Trailing stop: % fixe sous/sur le pic atteint, activé après 0.5% de profit
-            # Exemple: trailing 1.5% -> si BTC monte à 80000, SL = 80000 * 0.985 = 78800
-            if profit_pct >= 0.5 and self._trailing_stop_pct > 0:
+            # Trailing stop: % fixe sous/sur le pic atteint, activé après 2% de profit
+            # (activation tardive pour laisser le trade respirer et éviter stopouts sur bruit)
+            # Exemple: trailing 3% -> si BTC monte à 80000, SL = 80000 * 0.97 = 77600
+            if profit_pct >= 2.0 and self._trailing_stop_pct > 0:
                 trail_mult = self._trailing_stop_pct / 100.0
                 if pos.side == OrderSide.BUY:
                     # Mettre à jour le pic le plus haut atteint

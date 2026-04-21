@@ -426,9 +426,12 @@ class TradingBot:
                 if current_price <= 0:
                     continue
 
-                # Calculate SL/TP based on 2% distance
-                sl_pct = 0.02
-                tp_pct = 0.03
+                # SL/TP larges pour laisser respirer les positions (R:R = 2.0)
+                # SL 2.5% du prix, TP 5% du prix
+                # Pour du 3x: perte ~7.5% marge, gain ~15% marge
+                # Pour du 20x: perte ~50% marge, gain ~100% marge (positions preexistantes tres risquees)
+                sl_pct = 0.025
+                tp_pct = 0.05
                 if is_long:
                     sl_price = round(entry_price * (1 - sl_pct), 6)
                     tp_price = round(entry_price * (1 + tp_pct), 6)
